@@ -15,5 +15,9 @@ COPY . .
 
 # Render's Docker services expect port 10000 and don't inject $PORT the
 # way native runtimes do, so we bind to it directly. --timeout 300 stops
-# gunicorn from killing a worker mid-download on a longer video.
-CMD ["gunicorn", "-w", "2", "--timeout", "300", "-b", "0.0.0.0:10000", "app:app"]
+# gunicorn from killing a worker mid-download on a longer video. Threads
+# (rather than only processes) give more concurrent downloads per MB of
+# RAM, which matters on small instances — downloading is mostly waiting
+# on network I/O, not CPU.
+CMD ["gunicorn", "--workers", "2", "--threads", "4", "--worker-class", "gthread", \
+     "--timeout", "300", "-b", "0.0.0.0:10000", "app:app"]

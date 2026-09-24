@@ -226,9 +226,9 @@
   </div>
 
   <footer>
-    Fetchreel runs entirely on this server — nothing is sent anywhere else.
-    Only download things you own or have permission to save; respect the
-    source platform's terms and local copyright law.
+    Every download is fetched and processed on the server, never in your
+    browser. Only download things you own or have permission to save —
+    respect the source platform's terms and local copyright law.
   </footer>
 </main>
 
@@ -316,24 +316,40 @@ downloadBtn.addEventListener('click', async () => {
       body: JSON.stringify({ url, format }),
     });
 
+    const contentType = res.headers.get('Content-Type') || '';
+    const isJson = contentType.includes('application/json');
+
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
+      const data = isJson ? await res.json().catch(() => ({})) : {};
       setStatus(data.error || 'Download failed.', true);
       return;
     }
 
-    const blob = await res.blob();
-    const disposition = res.headers.get('Content-Disposition') || '';
-    const match = disposition.match(/filename="?([^"]+)"?/);
-    const filename = match ? match[1] : 'download';
+    if (isJson) {
+      // Cloud storage mode: the server hands back a signed link instead
+      // of the file itself.
+      const data = await res.json();
+      if (!data.url) {
+        setStatus('Download failed.', true);
+        return;
+      }
+      window.location.href = data.url;
+      setStatus('Done — downloading from cloud storage.');
+    } else {
+      // Local mode: the response body is the file itself.
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="?([^"]+)"?/);
+      const filename = match ? match[1] : 'download';
 
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setStatus('Done — check your downloads folder.');
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatus('Done — check your downloads folder.');
+    }
   } catch (err) {
     setStatus('Couldn\'t reach the server. Try again.', true);
   } finally {
