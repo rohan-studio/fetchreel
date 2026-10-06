@@ -1,7 +1,10 @@
-.env
-__pycache__/
-*.pyc
-venv/
-.venv/
+*.iml
+.gradle
+/local.properties
+/.idea
 .DS_Store
-apkfetch/
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx

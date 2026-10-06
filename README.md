@@ -1,222 +1,101 @@
-# Fetchreel
+# Fetchreel — Native Android Media Downloader
 
-A small self-hosted webapp: paste a link, pick a quality, download the file.
-It works with any site [yt-dlp](https://github.com/yt-dlp/yt-dlp) supports —
-YouTube, TikTok, Facebook, Instagram, X/Twitter, Reddit, and hundreds of
-others — because the extraction logic isn't written per-site here; yt-dlp
-already knows how to read the URL and figure out the rest. That's also why
-this stays useful over time: yt-dlp ships updates constantly as platforms
-change their pages, and updating this app's dependency is enough to keep up.
+<p align="center">
+  <b>A 100% on-device Android video and audio downloader powered by yt-dlp & FFmpeg.</b><br>
+  No external servers, no cloud tracking, completely private and offline-capable extraction.
+</p>
 
-## 1. Install
+<p align="center">
+  <a href="assets/fetchreel-v1.0.0.apk"><b>⬇️ Download APK (v1.0.0)</b></a>
+</p>
 
-You'll need Python 3.9+ and **ffmpeg** (used to merge separate video/audio
-streams and to produce MP3s). ffmpeg isn't a pip package — install it with
-your system's package manager:
+---
 
+> [!WARNING]
+> **DISCLAIMER: FOR EDUCATIONAL & RESEARCH PURPOSES ONLY**
+> Fetchreel is developed strictly for educational, technical demonstration, and personal backup purposes. Please respect intellectual property laws, copyright regulations, and the Terms of Service of content providers. The developers assume no responsibility for any unauthorized usage.
+
+---
+
+## 📱 Features
+
+- **⚡ 100% On-Device Extraction:**
+  Runs the full modern `yt-dlp` and `FFmpeg` engines directly on your phone using an embedded Python 3.11+ and QuickJS runtime. No third-party proxy or web server is involved.
+- **📋 Auto-Capture Clipboard Links:**
+  Copy a link from YouTube, Instagram, TikTok, or X, switch back to Fetchreel, and the app automatically captures and analyzes the media instantly. Includes a toggle to enable/disable auto-capture.
+- **🔄 Background Download Engine:**
+  Downloads run via an Android Foreground Service with continuous notification progress and a partial CPU `WakeLock` — preventing Android from pausing or killing your download when the screen turns off.
+- **🎥 Multi-Resolution & MP3 Audio:**
+  Choose between highest quality 1080p+, balanced 720p, lightweight 480p/360p, or extract direct high-bitrate MP3 audio.
+- **📁 Media Management (Play, Share & Delete):**
+  Downloaded media is organized into `Download/Fetchreel` on your device. Easily preview with internal/external players, share to messaging apps, or permanently delete items with a safe confirmation dialog.
+- **📱 Built-in QR Code Sharing:**
+  Tap the QR code button in the app header or floating action button to display a QR code allowing nearby devices to scan and download the APK directly.
+- **🔄 In-App One-Click Engine Updates:**
+  Tap the refresh icon in the header anytime to pull the newest yt-dlp extraction definitions over-the-air (OTA) without needing to reinstall the app.
+- **🎨 Modern Dark UI:**
+  Built with Jetpack Compose and Material 3 design for high performance, smooth animations, and edge-to-edge aesthetics.
+
+---
+
+## 📥 Download & Install
+
+| Asset | Version | Architecture | Size | Requirements |
+| :--- | :--- | :--- | :--- | :--- |
+| [**fetchreel-v1.0.0.apk**](assets/fetchreel-v1.0.0.apk) | `1.0.0` | `arm64-v8a` | ~68 MB | Android 8.0+ (API 26+) |
+
+### Installation Steps:
+1. Download [`assets/fetchreel-v1.0.0.apk`](assets/fetchreel-v1.0.0.apk) directly to your Android device or scan the QR code within the app.
+2. Tap the downloaded APK in your file manager or notification panel.
+3. Allow "Install unknown apps" permission if prompted by Android.
+4. Launch **Fetchreel** and start downloading!
+
+---
+
+## 🛠️ Tech Stack & Architecture
+
+- **Language:** Kotlin 1.9.23
+- **UI Toolkit:** Jetpack Compose + Material 3
+- **Core Engine:**
+  - `io.github.junkfood02.youtubedl-android:library:0.18.1` (Bundled Python 3.11+ & QuickJS engine)
+  - `io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1` (Mobile FFmpeg binary for audio/video muxing)
+- **Background Service:** Android Foreground Service with `WAKE_LOCK` and notification channels
+- **Storage:** Scoped Storage & MediaStore API (`Environment.DIRECTORY_DOWNLOADS/Fetchreel`)
+- **QR Code:** ZXing (`com.google.zxing:core:3.5.3`)
+- **Image Loading:** Coil Compose 2.6.0
+- **Asynchronous Execution:** Kotlin Coroutines & StateFlow / SharedFlow
+
+---
+
+## 💻 Building from Source
+
+### Prerequisites:
+- Android SDK with API 34 installed
+- JDK 17
+- Gradle 8.7+
+
+### Build Debug APK:
 ```bash
-# Debian/Ubuntu
-sudo apt install ffmpeg
+./gradlew assembleDebug
+```
+The compiled APK will be output to:
+`app/build/outputs/apk/debug/app-debug.apk`
 
-# macOS (Homebrew)
-brew install ffmpeg
-
-# Windows
-winget install ffmpeg
+### Install directly to a connected ADB device:
+```bash
+adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Then, in the project folder:
+---
 
-```bash
-python -m venv venv
-source venv/bin/activate      # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-```
+## 👨‍💻 Credits & Organization
 
-## 2. Run it locally
+- **Organization:** **Rohan Studio**
+- **Developer:** **Rohan Arya**
+- **Repository:** [rohan-studio/fetchreel](https://github.com/rohan-studio/fetchreel)
 
-```bash
-python app.py
-```
+---
 
-Open **http://localhost:5000**, paste a link, hit "Fetch details," pick a
-quality, and download.
+## 📄 License & Terms
 
-## 3. Deploy to Render
-
-This project includes a `Dockerfile`, which is the part that matters for
-Render specifically: Render's native Python runtime has no way to install
-system packages, and ffmpeg is a system package, not a pip one. The Docker
-runtime gives us `apt-get`, so that's the route to use here.
-
-1. Push this project to a GitHub (or GitLab) repository — Render deploys
-   from a repo, not a local folder.
-2. In the Render dashboard: **New +** → **Web Service** → connect that repo.
-3. Set **Runtime** to **Docker**. Render usually auto-detects the
-   `Dockerfile`; if it asks, point it at `./Dockerfile`.
-4. Leave the Build Command blank — the Dockerfile handles that. Render
-   runs the Dockerfile's `CMD` as the start command.
-5. Pick an instance type and click **Create Web Service**.
-
-There's also a `render.yaml` in the project if you'd rather use Render's
-"Blueprint" flow instead (**New +** → **Blueprint**, point it at the repo).
-If Render doesn't like that file for any reason, the manual steps above
-work regardless.
-
-Two Render-specific things are already handled in the Dockerfile, so you
-don't need to think about them, but it's worth knowing why they're there:
-- Render's Docker services expect the app to listen on **port 10000** by
-  default, and — unlike some other hosts — don't inject a `$PORT`
-  variable for you to bind to instead. The container binds to `10000`
-  directly.
-- A video download can take a while, and gunicorn kills a worker that
-  takes too long by default (30s). The Dockerfile sets `--timeout 300`
-  (5 minutes) so a longer video doesn't get cut off mid-download. Raise
-  it further if you expect very long videos and Render's plan-level
-  request limits allow it.
-
-**On the Free instance type specifically:** it works, but know the
-trade-offs — a free service spins down after 15 minutes with no traffic
-and takes about a minute to wake back up on the next request; the
-filesystem resets every time that happens (harmless here, since
-downloaded files are already deleted right after they're sent to the
-browser); and you get 750 free instance-hours per workspace per month.
-None of that breaks the app — it just means "always-on and instant" is
-the $7/mo Starter tier, not Free.
-
-## 4. Cloud storage (optional)
-
-By default, a download is written to a temp folder on whatever server
-runs this, then deleted the moment it's been sent to the browser. That's
-fine for casual use, but every download still briefly needs disk space
-for the raw video/audio streams *and* the merged output at the same
-time — on a small instance, or with several people downloading large
-files at once, that can add up.
-
-Set these environment variables and Fetchreel uploads finished downloads
-to S3-compatible object storage instead, handing the browser a temporary
-signed link rather than streaming the file through this server at all:
-
-| Variable | Required? | Notes |
-|---|---|---|
-| `S3_BUCKET` | yes (to turn this on) | Leave unset entirely to keep using local storage |
-| `S3_ACCESS_KEY_ID` | yes | |
-| `S3_SECRET_ACCESS_KEY` | yes | |
-| `S3_ENDPOINT_URL` | only for non-AWS providers | e.g. your Cloudflare R2 endpoint |
-| `S3_REGION` | no | default `auto` (fine for R2; use your real region for AWS S3) |
-| `S3_URL_EXPIRES_SECONDS` | no | default `3600` |
-
-This works with real AWS S3 or any S3-compatible provider. **Cloudflare
-R2** is a solid default choice for this specific use case, since it
-charges nothing for outbound bandwidth — meaningful when the whole point
-of the app is serving video files.
-
-**On Render:** open your service → **Environment** tab → **Add
-Environment Variable** for each one, then save — Render redeploys
-automatically. No code changes, no redeploying by hand, and nothing to
-touch again afterward. (If you used the `render.yaml` Blueprint, it
-already lists these as prompts during setup — leave them blank there to
-skip cloud storage.)
-
-**One-time setup on the bucket itself:** add a lifecycle rule that
-deletes objects after a day or so. Fetchreel doesn't delete what it
-uploads, since the signed link needs the file to keep existing for a
-while — the lifecycle rule is what keeps the bucket from growing forever
-instead of this app having to manage that itself.
-
-If none of these variables are set, nothing about this section applies —
-Fetchreel just works as described in the rest of this README.
-
-## 5. Deploy anywhere else (generic Docker/VPS)
-
-The built-in `python app.py` server is fine for trying this out locally,
-but it's a single-threaded dev server — don't leave it running like that
-for real use. Build and run the included Docker image directly:
-
-```bash
-docker build -t fetchreel .
-docker run -p 8000:10000 fetchreel
-```
-
-Or, without Docker, once ffmpeg is installed on the host:
-
-```bash
-gunicorn -w 2 --timeout 300 -b 0.0.0.0:8000 app:app
-```
-
-Put a reverse proxy (nginx or Caddy) in front of it for HTTPS and a real
-domain. A couple of things worth adding before you expose this publicly,
-since none of them are built in yet:
-
-- **Some form of access control.** As shipped, anyone who can reach the URL
-  can use it — fine on a home network or behind a VPN, not fine on the open
-  internet. A basic-auth layer in your reverse proxy config is the fastest
-  way to close that gap.
-- **A longer proxy timeout** for big files — nginx's default 60s read
-  timeout can cut off a long video mid-download.
-- **A job queue** (e.g. Celery + Redis) if you expect several people
-  downloading large files at once — right now each download blocks a
-  worker for as long as it takes.
-
-## 6. YouTube blocking ("Sign in to confirm you're not a bot")
-
-If YouTube links work on your own machine but fail on Render (or any
-other server) with something like *"Sign in to confirm you're not a
-bot"*, that's not a bug in this app — it's YouTube's bot detection, and
-it treats cloud/datacenter IPs (Render, AWS, GCP, every VPS provider)
-far more suspiciously than a home internet connection. Being direct
-about this: **there is no setting that makes it stop happening for
-good** — YouTube and the tools that work around this stay in an ongoing
-back-and-forth, and any fix here is a mitigation, not a permanent one.
-
-What's already built in, automatically, with nothing to configure:
-- If a request gets challenged, the app retries it with a few different
-  yt-dlp "player client" profiles (`tv`, `tv_embedded`, `android`,
-  `ios`) before giving up — one of these often succeeds even when the
-  default doesn't.
-- `yt-dlp[default]` and the `deno` package are both in
-  `requirements.txt`. Since late 2025, YouTube extraction increasingly
-  needs an external JavaScript runtime to fully work, and `deno` (pulled
-  in automatically as a Python package — no separate install step) is
-  yt-dlp's own recommended one. Without it, some formats silently go
-  missing even when there's no bot-check error at all.
-
-What you can add if the above isn't enough, both purely via environment
-variables — no code changes:
-
-- **`YOUTUBE_COOKIES_B64`** — a real, logged-in YouTube session raises
-  the trust score of every request. Export `cookies.txt` from your
-  browser (the "Get cookies.txt LOCALLY" extension works), base64-encode
-  it (`base64 -w0 cookies.txt`), and set the output as this variable.
-  Two honest caveats: cookies expire, so expect to redo this every so
-  often, and heavy automated use from a flagged server IP can get *that
-  account* rate-limited too — use a throwaway account, not your main
-  one.
-- **`YTDLP_PROXY`** — routes yt-dlp's requests through a proxy (e.g.
-  `http://user:pass@host:port`). A *residential* proxy is the closest
-  thing to an actual fix here, since it changes the thing YouTube is
-  really scoring — the IP itself — rather than working around the
-  symptom. It's also the only option on this list that costs money.
-
-Realistic expectation: cookies plus the built-in retries clear up most
-of this for casual, personal-use traffic. If you're hitting the wall on
-most requests, the IP is the real problem, and a residential proxy is
-the only thing on this list that reliably addresses that.
-
-## Known limitations
-
-- Playlist links only fetch the first video, not the whole playlist.
-- No login, no per-user history — it's a single-shared tool as written.
-- In local storage mode, files are deleted from this server right after
-  they're sent, so nothing accumulates on disk. In cloud storage mode,
-  files accumulate in the bucket instead until your lifecycle rule
-  clears them out (see the Cloud storage section above).
-
-## A note on use
-
-This is a wrapper around yt-dlp, not a way around anything yt-dlp itself
-can't already do. Use it for content you own, have permission to save, or
-that's otherwise yours to keep — downloading someone else's work without
-permission can violate the platform's terms of service and, depending on
-what it is and where you are, copyright law. That's on however this gets
-used, same as it would be for any general-purpose download tool.
+This project is licensed for educational and personal use only. All trademarks, logos, and brand names are the property of their respective owners.
