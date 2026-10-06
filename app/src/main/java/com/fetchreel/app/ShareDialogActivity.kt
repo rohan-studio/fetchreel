@@ -75,13 +75,18 @@ class ShareDialogActivity : ComponentActivity() {
                             context = this,
                             url = info.url,
                             title = info.title,
-                            option = option
+                            option = option,
+                            thumbnail = info.thumbnail
                         )
                         Toast.makeText(
                             this,
                             "🚀 Starting download: ${option.label}",
                             Toast.LENGTH_SHORT
                         ).show()
+                        val mainIntent = Intent(this, MainActivity::class.java).apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                        }
+                        startActivity(mainIntent)
                         finish()
                     }
                 )

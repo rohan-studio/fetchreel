@@ -60,6 +60,7 @@ fun MainScreen(
     // Single link state
     var url by remember { mutableStateOf(initialSharedUrl ?: "") }
     var downloadState by remember { mutableStateOf<DownloadState>(DownloadState.Idle) }
+    val activeDownload by DownloadService.activeDownload.collectAsState()
 
     // Playlist state
     var playlistUrl by remember { mutableStateOf("") }
@@ -428,6 +429,11 @@ fun MainScreen(
                 )
             }
 
+            // Active Download Card (prominently displayed when single download is active in background)
+            activeDownload?.let { active ->
+                DownloadProgressCard(download = active)
+            }
+
             // ==================== SECTION 1: SINGLE MEDIA ====================
             if (currentSection == MainSection.SINGLE) {
                 UrlInputField(
@@ -484,71 +490,80 @@ fun MainScreen(
                         }
                     }
                     is DownloadState.Probed -> {
-                        VideoPreviewCard(info = state.info)
-                        QualitySelector(
-                            options = state.info.options,
-                            selectedOption = state.selectedOption,
-                            onOptionSelected = { option ->
-                                downloadState = state.copy(selectedOption = option)
-                            },
-                            onDownloadClicked = {
-                                DownloadService.startDownload(
-                                    context = context,
-                                    url = state.info.url,
-                                    title = state.info.title,
-                                    option = state.selectedOption
-                                )
-                            }
-                        )
+                        if (activeDownload == null) {
+                            VideoPreviewCard(info = state.info)
+                            QualitySelector(
+                                options = state.info.options,
+                                selectedOption = state.selectedOption,
+                                onOptionSelected = { option ->
+                                    downloadState = state.copy(selectedOption = option)
+                                },
+                                onDownloadClicked = {
+                                    DownloadService.startDownload(
+                                        context = context,
+                                        url = state.info.url,
+                                        title = state.info.title,
+                                        option = state.selectedOption,
+                                        thumbnail = state.info.thumbnail
+                                    )
+                                }
+                            )
+                        }
                     }
                     is DownloadState.Downloading -> {
-                        VideoPreviewCard(info = state.info)
-                        DownloadProgressCard(
-                            info = state.info,
-                            progress = state.progress,
-                            speedText = state.speedText,
-                            etaText = state.etaText
-                        )
+                        if (activeDownload == null) {
+                            VideoPreviewCard(info = state.info)
+                            DownloadProgressCard(
+                                info = state.info,
+                                progress = state.progress,
+                                speedText = state.speedText,
+                                etaText = state.etaText
+                            )
+                        }
                     }
                     is DownloadState.Completed -> {
-                        Card(
-                            shape = RoundedCornerShape(14.dp),
-                            colors = CardDefaults.cardColors(containerColor = SuccessGreen.copy(alpha = 0.15f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = "✓ Download Complete!",
-                                    color = SuccessGreen,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "File saved to ${state.savedPath}",
-                                    color = TextPrimary,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                        if (activeDownload == null) {
+                            Card(
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = SuccessGreen.copy(alpha = 0.15f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "✓ Download Complete!",
+                                        color = SuccessGreen,
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "File saved to ${state.savedPath}",
+                                        color = TextPrimary,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
                             }
                         }
                     }
                     is DownloadState.Error -> {
-                        Card(
-                            shape = RoundedCornerShape(14.dp),
-                            colors = CardDefaults.cardColors(containerColor = ErrorRed.copy(alpha = 0.15f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                Text(
-                                    text = "Error",
-                                    color = ErrorRed,
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = state.message,
-                                    color = TextPrimary,
-                                    style = MaterialTheme.typography.bodySmall
-                                )
+                        if (activeDownload == null) {
+                            Card(
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(containerColor = ErrorRed.copy(alpha = 0.15f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        text = "Error",
+                                        color = ErrorRed,
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = state.message,
+                                        color = TextPrimary,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
                             }
                         }
                     }

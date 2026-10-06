@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import com.fetchreel.app.FetchreelApplication
 import com.fetchreel.app.MainActivity
 import com.fetchreel.app.R
+import com.fetchreel.app.data.ActiveDownload
 import com.fetchreel.app.data.DownloadEvent
 import com.fetchreel.app.data.PlaylistItem
 import com.fetchreel.app.data.PlaylistDownloadEvent
@@ -25,7 +26,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -49,9 +52,14 @@ class DownloadService : Service() {
         const val EXTRA_FORMAT_SPEC = "EXTRA_FORMAT_SPEC"
         const val EXTRA_IS_AUDIO = "EXTRA_IS_AUDIO"
         const val EXTRA_LABEL = "EXTRA_LABEL"
+        const val EXTRA_THUMBNAIL = "EXTRA_THUMBNAIL"
+        const val EXTRA_HEIGHT = "EXTRA_HEIGHT"
 
         private val _events = MutableSharedFlow<DownloadEvent>(extraBufferCapacity = 64)
         val events = _events.asSharedFlow()
+
+        private val _activeDownload = MutableStateFlow<ActiveDownload?>(null)
+        val activeDownload = _activeDownload.asStateFlow()
 
         private val _playlistEvents = MutableSharedFlow<PlaylistDownloadEvent>(extraBufferCapacity = 64)
         val playlistEvents = _playlistEvents.asSharedFlow()
@@ -63,8 +71,18 @@ class DownloadService : Service() {
             context: Context,
             url: String,
             title: String,
-            option: QualityOption
+            option: QualityOption,
+            thumbnail: String? = null
         ) {
+            _activeDownload.value = ActiveDownload(
+                url = url,
+                title = title,
+                thumbnail = thumbnail,
+                option = option,
+                progress = 0f,
+                statusText = "Connecting to stream..."
+            )
+
             val intent = Intent(context, DownloadService::class.java).apply {
                 action = ACTION_START_DOWNLOAD
                 putExtra(EXTRA_URL, url)
@@ -72,6 +90,8 @@ class DownloadService : Service() {
                 putExtra(EXTRA_FORMAT_SPEC, option.formatSpec)
                 putExtra(EXTRA_IS_AUDIO, option.isAudio)
                 putExtra(EXTRA_LABEL, option.label)
+                putExtra(EXTRA_THUMBNAIL, thumbnail)
+                option.height?.let { putExtra(EXTRA_HEIGHT, it) }
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.startForegroundService(intent)
@@ -118,15 +138,18 @@ class DownloadService : Service() {
                 val formatSpec = intent.getStringExtra(EXTRA_FORMAT_SPEC) ?: "bestvideo+bestaudio/best"
                 val isAudio = intent.getBooleanExtra(EXTRA_IS_AUDIO, false)
                 val label = intent.getStringExtra(EXTRA_LABEL) ?: ""
+                val thumbnail = intent.getStringExtra(EXTRA_THUMBNAIL)
+                val height = if (intent.hasExtra(EXTRA_HEIGHT)) intent.getIntExtra(EXTRA_HEIGHT, 0) else null
 
                 val option = QualityOption(
                     label = label,
                     formatSpec = formatSpec,
+                    height = height,
                     isAudio = isAudio
                 )
 
                 startForegroundWithNotification(title)
-                executeDownload(url, title, option)
+                executeDownload(url, title, option, thumbnail)
             }
             ACTION_START_PLAYLIST_DOWNLOAD -> {
                 val req = pendingPlaylistRequest ?: return START_NOT_STICKY
@@ -193,7 +216,7 @@ class DownloadService : Service() {
         }
     }
 
-    private fun executeDownload(url: String, title: String, option: QualityOption) {
+    private fun executeDownload(url: String, title: String, option: QualityOption, thumbnail: String? = null) {
         serviceScope.launch(Dispatchers.IO) {
             val powerManager = getSystemService(Context.POWER_SERVICE) as? PowerManager
             val wakeLock = powerManager?.newWakeLock(
@@ -205,23 +228,51 @@ class DownloadService : Service() {
                 val tempDir = StorageHelper.getAppTempFolder(this@DownloadService)
                 var lastUpdate = 0L
 
+                _activeDownload.value = ActiveDownload(
+                    url = url,
+                    title = title,
+                    thumbnail = thumbnail,
+                    option = option,
+                    progress = 0f,
+                    statusText = "Downloading stream..."
+                )
+
                 val result = DownloaderManager.downloadMedia(
                     context = this@DownloadService,
                     url = url,
                     option = option,
                     tempDir = tempDir
-                ) { progress, speed, eta ->
+                ) { progress, speed, eta, statusText ->
                     val now = System.currentTimeMillis()
-                    if (now - lastUpdate > 500) {
+                    if (now - lastUpdate > 300) {
                         lastUpdate = now
-                        updateNotification(title, progress.toInt(), speed, eta)
-                        _events.tryEmit(DownloadEvent.Progress(progress, speed, eta))
+                        updateNotification(title, progress.toInt(), speed, eta, statusText)
+                        _events.tryEmit(DownloadEvent.Progress(progress, speed, eta, statusText))
+                        _activeDownload.value = ActiveDownload(
+                            url = url,
+                            title = title,
+                            thumbnail = thumbnail,
+                            option = option,
+                            progress = progress,
+                            speed = speed,
+                            eta = eta,
+                            statusText = statusText
+                        )
                     }
                 }
 
                 result.fold(
                     onSuccess = { tempFile ->
                         try {
+                            _activeDownload.value = ActiveDownload(
+                                url = url,
+                                title = title,
+                                thumbnail = thumbnail,
+                                option = option,
+                                progress = 99f,
+                                statusText = "Saving to Downloads/Fetchreel..."
+                            )
+                            updateNotification(title, 99, "", "", "Saving to Downloads/Fetchreel...")
                             val extension = if (option.isAudio) ".mp3" else ".mp4"
                             val fileName = "$title$extension"
                             val savedPath = StorageHelper.saveToPublicStorage(
@@ -230,9 +281,11 @@ class DownloadService : Service() {
                                 desiredFileName = fileName,
                                 isAudio = option.isAudio
                             )
+                            _activeDownload.value = null
                             showCompletedNotification(title, savedPath)
                             _events.tryEmit(DownloadEvent.Completed(title, savedPath, option.isAudio))
                         } catch (e: Exception) {
+                            _activeDownload.value = null
                             showErrorNotification(title, e.localizedMessage ?: "Failed to save file")
                             _events.tryEmit(DownloadEvent.Failed(e.localizedMessage ?: "Failed to save file"))
                         } finally {
@@ -241,6 +294,7 @@ class DownloadService : Service() {
                         }
                     },
                     onFailure = { error ->
+                        _activeDownload.value = null
                         showErrorNotification(title, error.localizedMessage ?: "Download failed")
                         _events.tryEmit(DownloadEvent.Failed(error.localizedMessage ?: "Download failed"))
                         stopForeground(STOP_FOREGROUND_DETACH)
@@ -307,7 +361,7 @@ class DownloadService : Service() {
                         url = item.url,
                         option = request.option,
                         tempDir = tempDir
-                    ) { progress, speed, eta ->
+                    ) { progress, speed, eta, _ ->
                         val now = System.currentTimeMillis()
                         if (now - lastUpdate > 500) {
                             lastUpdate = now
@@ -384,14 +438,24 @@ class DownloadService : Service() {
         }
     }
 
-    private fun updateNotification(title: String, progress: Int, speed: String, eta: String) {
+    private fun updateNotification(
+        title: String,
+        progress: Int,
+        speed: String,
+        eta: String,
+        statusText: String = ""
+    ) {
         val text = buildString {
-            if (speed.isNotEmpty()) append(speed)
-            if (eta.isNotEmpty()) {
-                if (isNotEmpty()) append(" • ")
-                append("ETA: ").append(eta)
+            if (statusText.isNotEmpty() && progress >= 95) {
+                append(statusText)
+            } else {
+                if (speed.isNotEmpty()) append(speed)
+                if (eta.isNotEmpty()) {
+                    if (isNotEmpty()) append(" • ")
+                    append("ETA: ").append(eta)
+                }
+                if (isEmpty()) append("$progress%")
             }
-            if (isEmpty()) append("$progress%")
         }
 
         val notification = NotificationCompat.Builder(this, FetchreelApplication.CHANNEL_ID)

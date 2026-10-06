@@ -123,7 +123,7 @@ object DownloaderManager {
                                 qualityOptions.add(
                                     QualityOption(
                                         label = "${height}p",
-                                        formatSpec = "bestvideo[height<=$height]+bestaudio/best[height<=$height]",
+                                        formatSpec = "bestvideo[height<=$height]+bestaudio/best[height<=$height]/bestvideo[height<=$height]/best[height<=$height]/best",
                                         height = height,
                                         isAudio = false
                                     )
@@ -357,7 +357,7 @@ object DownloaderManager {
         url: String,
         option: QualityOption,
         tempDir: File,
-        onProgress: (progress: Float, speedText: String, etaText: String) -> Unit
+        onProgress: (progress: Float, speedText: String, etaText: String, statusText: String) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
             val initRes = ensureInitialized(context)
@@ -379,13 +379,14 @@ object DownloaderManager {
                 addOption("--retries", 3)
                 addOption("--socket-timeout", 30)
                 addOption("--no-check-certificates")
+                addOption("--geo-bypass")
                 addOption(
                     "--user-agent",
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                 )
 
                 if (isYouTube) {
-                    addOption("--extractor-args", "youtube:player_client=android,web")
+                    addOption("--extractor-args", "youtube:player_client=web,ios,android")
                 }
                 if (isInstagram) {
                     addOption("--add-header", "Accept-Language: en-US,en;q=0.9")
@@ -397,20 +398,58 @@ object DownloaderManager {
                     addOption("--audio-format", "mp3")
                     addOption("--audio-quality", "192K")
                 } else {
-                    addOption("-f", option.formatSpec)
+                    val rawSpec = option.formatSpec
+                    val safeFormatSpec = if (rawSpec.contains("/")) {
+                        rawSpec
+                    } else if (option.height != null) {
+                        val h = option.height
+                        "bestvideo[height<=$h]+bestaudio/best[height<=$h]/bestvideo[height<=$h]/best[height<=$h]/best"
+                    } else {
+                        "bestvideo+bestaudio/best"
+                    }
+                    addOption("-f", safeFormatSpec)
                     addOption("--merge-output-format", "mp4")
                 }
             }
 
+            var isMerging = false
+            var isAudioStream = false
+
             YoutubeDL.getInstance().execute(request) { progress, etaInSeconds, line ->
                 val speed = extractSpeedFromLog(line)
                 val etaText = if (etaInSeconds > 0) "${etaInSeconds}s" else ""
-                onProgress(progress, speed, etaText)
+                val currentLine = line ?: ""
+
+                val statusText = when {
+                    currentLine.contains("[Merger]", ignoreCase = true) || currentLine.contains("Merging formats", ignoreCase = true) -> {
+                        isMerging = true
+                        "Merging video & audio with FFmpeg..."
+                    }
+                    currentLine.contains("[ExtractAudio]", ignoreCase = true) || currentLine.contains("Destination: .*\\.mp3".toRegex()) -> {
+                        isMerging = true
+                        "Converting audio to MP3..."
+                    }
+                    currentLine.contains("[download] Destination", ignoreCase = true) -> {
+                        if (currentLine.contains(".m4a") || currentLine.contains(".webm") || currentLine.contains(".mp3")) {
+                            isAudioStream = true
+                            "Downloading audio stream..."
+                        } else {
+                            "Downloading video stream..."
+                        }
+                    }
+                    isMerging -> "Finalizing media file..."
+                    isAudioStream -> "Downloading audio stream..."
+                    else -> "Downloading..."
+                }
+
+                val effectiveProgress = if (isMerging) 98f else progress
+                onProgress(effectiveProgress, speed, etaText, statusText)
             }
 
             // Find output file produced in tempDir matching jobId
             val matchingFiles = tempDir.listFiles { _, name -> name.startsWith(jobId) }
-            val downloadedFile = matchingFiles?.maxByOrNull { it.lastModified() }
+            val downloadedFile = matchingFiles?.filter { !it.name.endsWith(".part") && !it.name.endsWith(".ytdl") }
+                ?.maxByOrNull { it.lastModified() }
                 ?: throw IllegalStateException("Download finished but output file was not found")
 
             Result.success(downloadedFile)

@@ -6,7 +6,8 @@
 </p>
 
 <p align="center">
-  <a href="assets/fetchreel-v1.0.0.apk"><b>⬇️ Download APK (v1.0.0)</b></a>
+  <a href="https://github.com/rohan-studio/fetchreel/releases/download/v1.0.0/fetchreel-v1.0.0.apk"><b>⬇️ Download APK Direct (v1.0.0)</b></a> &nbsp;•&nbsp;
+  <a href="https://github.com/rohan-studio/fetchreel/releases/tag/v1.0.0"><b>📦 GitHub Releases & Assets</b></a>
 </p>
 
 ---
@@ -42,13 +43,13 @@
 
 ## 📥 Download & Install
 
-| Asset | Version | Architecture | Size | Requirements |
-| :--- | :--- | :--- | :--- | :--- |
-| [**fetchreel-v1.0.0.apk**](assets/fetchreel-v1.0.0.apk) | `1.0.0` | `arm64-v8a` | ~68 MB | Android 8.0+ (API 26+) |
+| Asset | Version | Architecture | Size | Direct Download | Release Details |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **fetchreel-v1.0.0.apk** | `1.0.0` | `arm64-v8a` | ~68 MB | [**⬇️ Download .APK**](https://github.com/rohan-studio/fetchreel/releases/download/v1.0.0/fetchreel-v1.0.0.apk) | [**View Release Assets**](https://github.com/rohan-studio/fetchreel/releases/tag/v1.0.0) |
 
 ### Installation Steps:
-1. Download [`assets/fetchreel-v1.0.0.apk`](assets/fetchreel-v1.0.0.apk) directly to your Android device or scan the QR code within the app.
-2. Tap the downloaded APK in your file manager or notification panel.
+1. Tap [**Download .APK**](https://github.com/rohan-studio/fetchreel/releases/download/v1.0.0/fetchreel-v1.0.0.apk) or visit [**GitHub Releases**](https://github.com/rohan-studio/fetchreel/releases/tag/v1.0.0) to get `fetchreel-v1.0.0.apk`.
+2. Tap the downloaded APK in your Android notification bar or Downloads folder.
 3. Allow "Install unknown apps" permission if prompted by Android.
 4. Launch **Fetchreel** and start downloading!
 

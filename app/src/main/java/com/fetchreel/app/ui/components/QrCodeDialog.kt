@@ -35,7 +35,7 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 
-const val APK_DOWNLOAD_URL = "https://github.com/rohan-studio/fetchreel/raw/main/assets/fetchreel-v1.0.0.apk"
+const val APK_DOWNLOAD_URL = "https://github.com/rohan-studio/fetchreel/releases/download/v1.0.0/fetchreel-v1.0.0.apk"
 const val REPO_URL = "https://github.com/rohan-studio/fetchreel"
 
 object QrCodeGenerator {
