@@ -17,3 +17,4 @@ val TextMuted = Color(0xFF6B7280)
 
 val SuccessGreen = Color(0xFF10B981)
 val ErrorRed = Color(0xFFEF4444)
+val WarningAmber = Color(0xFFF59E0B)

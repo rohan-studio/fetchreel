@@ -47,13 +47,16 @@ class MainActivity : ComponentActivity() {
 
     private fun extractUrlFromIntent(intent: Intent?): String? {
         if (intent == null) return null
+        val directUrl = intent.getStringExtra("initial_url")
+        if (!directUrl.isNullOrBlank()) return directUrl
+
         if (intent.action == Intent.ACTION_VIEW && intent.data != null) {
             return intent.dataString
         }
-        if (intent.action == Intent.ACTION_SEND) {
-            val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return null
+        val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+        if (!text.isNullOrBlank()) {
             val urlRegex = Regex("""https?://[^\s]+""")
-            return urlRegex.find(text)?.value
+            return urlRegex.find(text)?.value ?: text
         }
         return null
     }

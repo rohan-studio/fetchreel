@@ -5,4 +5,15 @@
         <item name="android:navigationBarColor">#0F1117</item>
         <item name="android:windowBackground">#0F1117</item>
     </style>
+
+    <!-- Translucent Popup Theme for Snaptube-style direct share dialog -->
+    <style name="Theme.Fetchreel.Dialog" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:colorBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
 </resources>

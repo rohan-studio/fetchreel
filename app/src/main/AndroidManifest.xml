@@ -40,8 +40,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
 
-            <!-- Receive shared links from YouTube, TikTok, Instagram, Twitter, etc. -->
+        <!-- Snaptube-style direct quick download popup when shared from any app -->
+        <activity
+            android:name=".ShareDialogActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Fetchreel.Dialog"
+            android:windowSoftInputMode="adjustResize"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

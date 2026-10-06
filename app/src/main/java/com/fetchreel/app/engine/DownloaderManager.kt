@@ -2,6 +2,8 @@ package com.fetchreel.app.engine
 
 import android.content.Context
 import android.util.Log
+import com.fetchreel.app.data.PlaylistItem
+import com.fetchreel.app.data.PlaylistInfo
 import com.fetchreel.app.data.QualityOption
 import com.fetchreel.app.data.VideoInfo
 import com.google.gson.Gson
@@ -95,7 +97,7 @@ object DownloaderManager {
                     }
 
                     val response = YoutubeDL.getInstance().execute(request)
-                    val jsonStr = response.out?.trim() ?: throw IllegalStateException("Empty response from yt-dlp")
+                    val jsonStr = response.out.trim().ifEmpty { throw IllegalStateException("Empty response from yt-dlp") }
                     val json = gson.fromJson(jsonStr, JsonObject::class.java)
 
                     val title = json.get("title")?.asString ?: "Untitled"
@@ -178,6 +180,171 @@ object DownloaderManager {
             Result.failure(cleanException(finalException))
         } catch (e: Exception) {
             Log.e(TAG, "Unexpected error probing URL: $url", e)
+            Result.failure(cleanException(e))
+        }
+    }
+
+    /**
+     * Probes playlist metadata and extracts list of individual video items without downloading them.
+     */
+    suspend fun probePlaylist(context: Context, url: String): Result<PlaylistInfo> = withContext(Dispatchers.IO) {
+        try {
+            val initRes = ensureInitialized(context)
+            if (initRes.isFailure) {
+                return@withContext Result.failure(
+                    initRes.exceptionOrNull() ?: IllegalStateException("Engine initialization failed")
+                )
+            }
+            Log.d(TAG, "Starting playlist probe for URL: $url")
+            val isYouTube = url.contains("youtube.com", ignoreCase = true) || url.contains("youtu.be", ignoreCase = true)
+
+            val clientFallbacks = if (isYouTube) {
+                listOf(null, "android,web", "tv", "tv_embedded", "ios")
+            } else {
+                listOf(null)
+            }
+
+            var lastError: Exception? = null
+            for (client in clientFallbacks) {
+                try {
+                    val request = YoutubeDLRequest(url).apply {
+                        addOption("--flat-playlist")
+                        addOption("--dump-single-json")
+                        addOption("--yes-playlist")
+                        addOption("--skip-download")
+                        addOption("--socket-timeout", 30)
+                        addOption("--retries", 3)
+                        addOption("--no-check-certificates")
+                        addOption(
+                            "--user-agent",
+                            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                        )
+                        if (client != null) {
+                            addOption("--extractor-args", "youtube:player_client=$client")
+                        }
+                    }
+
+                    val response = YoutubeDL.getInstance().execute(request)
+                    val jsonStr = response.out.trim().ifEmpty { throw IllegalStateException("Empty response from yt-dlp") }
+                    val json = gson.fromJson(jsonStr, JsonObject::class.java)
+
+                    val playlistTitle = json.get("title")?.takeIf { !it.isJsonNull }?.asString ?: "Untitled Playlist"
+                    val uploader = json.get("uploader")?.takeIf { !it.isJsonNull }?.asString
+                        ?: json.get("channel")?.takeIf { !it.isJsonNull }?.asString
+                        ?: json.get("uploader_id")?.takeIf { !it.isJsonNull }?.asString
+                    val playlistThumbnail = json.get("thumbnail")?.takeIf { !it.isJsonNull }?.asString
+
+                    val items = mutableListOf<PlaylistItem>()
+
+                    val entries = json.getAsJsonArray("entries")
+                    if (entries != null && entries.size() > 0) {
+                        var idx = 0
+                        for (entryElem in entries) {
+                            if (!entryElem.isJsonObject) continue
+                            val entry = entryElem.asJsonObject
+                            val id = entry.get("id")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                            val title = entry.get("title")?.takeIf { !it.isJsonNull }?.asString ?: "Video #${idx + 1}"
+                            if (title.contains("[Private video]") || title.contains("[Deleted video]")) {
+                                continue
+                            }
+
+                            var itemUrl = entry.get("url")?.takeIf { !it.isJsonNull }?.asString
+                            if (itemUrl.isNullOrEmpty() || !itemUrl.startsWith("http")) {
+                                itemUrl = if (id.isNotEmpty()) "https://www.youtube.com/watch?v=$id" else url
+                            }
+
+                            val duration = try {
+                                entry.get("duration")?.takeIf { !it.isJsonNull }?.asLong
+                            } catch (_: Exception) {
+                                try {
+                                    entry.get("duration")?.takeIf { !it.isJsonNull }?.asDouble?.toLong()
+                                } catch (_: Exception) {
+                                    null
+                                }
+                            }
+
+                            var thumb: String? = entry.get("thumbnail")?.takeIf { !it.isJsonNull }?.asString
+                            if (thumb.isNullOrEmpty()) {
+                                val thumbsArr = entry.getAsJsonArray("thumbnails")
+                                if (thumbsArr != null && thumbsArr.size() > 0) {
+                                    val lastThumb = thumbsArr.get(thumbsArr.size() - 1)
+                                    if (lastThumb.isJsonObject) {
+                                        thumb = lastThumb.asJsonObject.get("url")?.takeIf { !it.isJsonNull }?.asString
+                                    }
+                                }
+                            }
+                            if (thumb.isNullOrEmpty() && id.isNotEmpty()) {
+                                thumb = "https://i.ytimg.com/vi/$id/hqdefault.jpg"
+                            }
+
+                            val itemUploader = entry.get("uploader")?.takeIf { !it.isJsonNull }?.asString ?: uploader
+
+                            items.add(
+                                PlaylistItem(
+                                    id = if (id.isNotEmpty()) id else UUID.randomUUID().toString(),
+                                    title = title,
+                                    url = itemUrl,
+                                    duration = duration,
+                                    thumbnail = thumb,
+                                    uploader = itemUploader,
+                                    index = idx
+                                )
+                            )
+                            idx++
+                        }
+                    } else {
+                        // In case a single video was provided to the playlist tab
+                        val id = json.get("id")?.takeIf { !it.isJsonNull }?.asString ?: UUID.randomUUID().toString()
+                        val duration = try {
+                            json.get("duration")?.takeIf { !it.isJsonNull }?.asLong
+                        } catch (_: Exception) {
+                            null
+                        }
+                        items.add(
+                            PlaylistItem(
+                                id = id,
+                                title = playlistTitle,
+                                url = url,
+                                duration = duration,
+                                thumbnail = playlistThumbnail,
+                                uploader = uploader,
+                                index = 0
+                            )
+                        )
+                    }
+
+                    if (items.isEmpty()) {
+                        throw IllegalStateException("No downloadable videos found in playlist")
+                    }
+
+                    val playlistInfo = PlaylistInfo(
+                        url = url,
+                        title = playlistTitle,
+                        author = uploader,
+                        thumbnail = playlistThumbnail ?: items.firstOrNull()?.thumbnail,
+                        items = items
+                    )
+
+                    Log.d(TAG, "Successfully probed playlist: $playlistTitle (${items.size} videos)")
+                    return@withContext Result.success(playlistInfo)
+                } catch (e: Exception) {
+                    lastError = e
+                    val errMsg = e.message?.lowercase() ?: ""
+                    val isBotCheck = errMsg.contains("not a bot") ||
+                            errMsg.contains("sign in to confirm") ||
+                            errMsg.contains("bot")
+                    if (!isBotCheck || client == clientFallbacks.last()) {
+                        break
+                    }
+                    Log.w(TAG, "Bot check encountered for playlist $url, retrying with client: $client")
+                }
+            }
+
+            val finalException = lastError ?: IllegalStateException("Failed to probe playlist")
+            Log.e(TAG, "Error probing playlist: $url", finalException)
+            Result.failure(cleanException(finalException))
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected error probing playlist: $url", e)
             Result.failure(cleanException(e))
         }
     }

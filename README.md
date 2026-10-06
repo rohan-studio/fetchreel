@@ -21,6 +21,8 @@
 
 - **⚡ 100% On-Device Extraction:**
   Runs the full modern `yt-dlp` and `FFmpeg` engines directly on your phone using an embedded Python 3.11+ and QuickJS runtime. No third-party proxy or web server is involved.
+- **✨ Snaptube-Style Direct Share Popup:**
+  Share any video from Instagram, YouTube, Facebook, TikTok, or X directly to Fetchreel. A sleek translucent popup slides up right over your current app with 1-tap options for **MP3 Audio**, **4K (2160p)**, **1080p FHD**, **720p HD**, etc. Tapping download starts the background service and immediately closes the popup so you stay in your feed!
 - **📋 Auto-Capture Clipboard Links:**
   Copy a link from YouTube, Instagram, TikTok, or X, switch back to Fetchreel, and the app automatically captures and analyzes the media instantly. Includes a toggle to enable/disable auto-capture.
 - **🔄 Background Download Engine:**
