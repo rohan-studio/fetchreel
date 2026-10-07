@@ -26,10 +26,10 @@ class DownloadProgressCard(ctk.CTkFrame):
         self,
         parent,
         job_id: str = "",
-        on_cancel: Optional[Callable[[str], None]] = None = None,
-        on_play: Optional[Callable[[str], None]] = None = None,
-        on_open_folder: Optional[Callable[[str], None]] = None = None,
-        on_dismiss: Optional[Callable[[str], None]] = None = None,
+        on_cancel: Optional[Callable[[str], None]] = None,
+        on_play: Optional[Callable[[str], None]] = None,
+        on_open_folder: Optional[Callable[[str], None]] = None,
+        on_dismiss: Optional[Callable[[str], None]] = None,
     ):
         super().__init__(
             parent,
