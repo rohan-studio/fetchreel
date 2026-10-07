@@ -1,0 +1,2 @@
+assets/android/fetchreel-v1.1.0.apk filter=lfs diff=lfs merge=lfs -text
+assets/windows/Fetchreel.exe filter=lfs diff=lfs merge=lfs -text
