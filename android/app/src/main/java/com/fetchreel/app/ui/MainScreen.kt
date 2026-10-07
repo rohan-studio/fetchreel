@@ -440,7 +440,37 @@ fun MainScreen(
                     url = url,
                     onUrlChange = { url = it },
                     isProbing = downloadState is DownloadState.Probing,
-                    onFetchClicked = { startProbing(url) }
+                    onFetchClicked = { startProbing(url) },
+                    onQuickVideoClicked = {
+                        if (url.isNotBlank()) {
+                            DownloadService.startDownload(
+                                context = context,
+                                url = url.trim(),
+                                title = "Fast Video Download",
+                                option = QualityOption(
+                                    label = "Best Video",
+                                    formatSpec = "bestvideo+bestaudio/best",
+                                    isAudio = false
+                                )
+                            )
+                            Toast.makeText(context, "⚡ Fast Video download started in background!", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    onQuickAudioClicked = {
+                        if (url.isNotBlank()) {
+                            DownloadService.startDownload(
+                                context = context,
+                                url = url.trim(),
+                                title = "Fast Audio Download",
+                                option = QualityOption(
+                                    label = "Audio (MP3)",
+                                    formatSpec = "bestaudio/best",
+                                    isAudio = true
+                                )
+                            )
+                            Toast.makeText(context, "🎵 Fast MP3 download started in background!", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 )
 
                 // Warning Banner if playlist link is pasted in Single Video section
@@ -577,7 +607,8 @@ fun MainScreen(
                     url = playlistUrl,
                     onUrlChange = { playlistUrl = it },
                     isProbing = playlistDownloadState is PlaylistDownloadState.Probing,
-                    onFetchClicked = { startPlaylistProbing(playlistUrl) }
+                    onFetchClicked = { startPlaylistProbing(playlistUrl) },
+                    fetchButtonText = "Fetch Playlist"
                 )
 
                 when (val state = playlistDownloadState) {

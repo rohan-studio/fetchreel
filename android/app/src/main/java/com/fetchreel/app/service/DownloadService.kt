@@ -274,7 +274,28 @@ class DownloadService : Service() {
                             )
                             updateNotification(title, 99, "", "", "Saving to Downloads/Fetchreel...")
                             val extension = if (option.isAudio) ".mp3" else ".mp4"
-                            val fileName = "$title$extension"
+                            val extractedTitle = if (tempFile.name.contains("___")) {
+                                tempFile.name.substringAfter("___").substringBeforeLast(".").trim()
+                            } else null
+
+                            val isPlaceholderTitle = title.isBlank() ||
+                                    title == "Media" ||
+                                    title.startsWith("Downloading") ||
+                                    title.startsWith("Fast Video") ||
+                                    title.startsWith("Fast Audio") ||
+                                    title.startsWith("Quick Download")
+
+                            val resolvedTitle = if (!extractedTitle.isNullOrBlank() && (isPlaceholderTitle || title.isBlank())) {
+                                extractedTitle
+                            } else if (title.isNotBlank() && !isPlaceholderTitle) {
+                                title
+                            } else if (!extractedTitle.isNullOrBlank()) {
+                                extractedTitle
+                            } else {
+                                if (option.isAudio) "Audio_${System.currentTimeMillis()}" else "Video_${System.currentTimeMillis()}"
+                            }
+
+                            val fileName = "$resolvedTitle$extension"
                             val savedPath = StorageHelper.saveToPublicStorage(
                                 context = this@DownloadService,
                                 tempFile = tempFile,
@@ -282,8 +303,8 @@ class DownloadService : Service() {
                                 isAudio = option.isAudio
                             )
                             _activeDownload.value = null
-                            showCompletedNotification(title, savedPath)
-                            _events.tryEmit(DownloadEvent.Completed(title, savedPath, option.isAudio))
+                            showCompletedNotification(resolvedTitle, savedPath)
+                            _events.tryEmit(DownloadEvent.Completed(resolvedTitle, savedPath, option.isAudio))
                         } catch (e: Exception) {
                             _activeDownload.value = null
                             showErrorNotification(title, e.localizedMessage ?: "Failed to save file")

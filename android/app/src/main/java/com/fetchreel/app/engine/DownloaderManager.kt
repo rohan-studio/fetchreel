@@ -67,9 +67,9 @@ object DownloaderManager {
             val isYouTube = url.contains("youtube.com", ignoreCase = true) || url.contains("youtu.be", ignoreCase = true)
             val isInstagram = url.contains("instagram.com", ignoreCase = true)
 
-            // Alternate player client profiles for YouTube (mirrors Fetchreel app.py fallback logic)
+            // Prioritize Android/iOS mobile clients to bypass heavy web JS/QuickJS de-obfuscation challenges
             val clientFallbacks = if (isYouTube) {
-                listOf(null, "android,web", "tv", "tv_embedded", "ios")
+                listOf("android,ios", "ios", "android", "tv,tv_embedded", null)
             } else {
                 listOf(null)
             }
@@ -81,15 +81,20 @@ object DownloaderManager {
                         addOption("--dump-json")
                         addOption("--no-playlist")
                         addOption("--skip-download")
-                        addOption("--socket-timeout", 25)
-                        addOption("--retries", 3)
+                        addOption("--no-warnings")
+                        addOption("--no-call-home")
                         addOption("--no-check-certificates")
+                        addOption("--prefer-free-formats")
+                        addOption("--socket-timeout", 15)
+                        addOption("--retries", 2)
                         addOption(
                             "--user-agent",
                             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                         )
                         if (client != null) {
-                            addOption("--extractor-args", "youtube:player_client=$client")
+                            addOption("--extractor-args", "youtube:player_client=$client;skip=translated_subs,comments")
+                        } else if (isYouTube) {
+                            addOption("--extractor-args", "youtube:player_client=android,ios;skip=translated_subs,comments")
                         }
                         if (isInstagram) {
                             addOption("--add-header", "Accept-Language: en-US,en;q=0.9")
@@ -108,40 +113,80 @@ object DownloaderManager {
                     val duration = json.get("duration")?.asLong
 
                     val formatsArray = json.getAsJsonArray("formats")
-                    val seenHeights = mutableSetOf<Int>()
                     val qualityOptions = mutableListOf<QualityOption>()
+
+                    // Standard industry resolution tiers (handles 16:9, widescreen letterboxed 1012p, and 9:16 vertical Reels)
+                    val tierDefs = listOf(
+                        Triple("4K (2160p Ultra HD)", 2160) { s: Int, l: Int -> s >= 2000 || l >= 3500 },
+                        Triple("2K (1440p Quad HD)", 1440) { s: Int, l: Int -> s >= 1350 || l >= 2400 },
+                        Triple("1080p (Full HD)", 1080) { s: Int, l: Int -> s >= 900 || l >= 1700 },
+                        Triple("720p (HD)", 720) { s: Int, l: Int -> s >= 650 || l >= 1150 },
+                        Triple("480p (SD)", 480) { s: Int, l: Int -> s >= 420 || l >= 800 },
+                        Triple("360p", 360) { s: Int, l: Int -> s >= 300 || l >= 550 },
+                        Triple("240p", 240) { s: Int, l: Int -> s < 300 && l < 550 }
+                    )
+
+                    val tierFormats = mutableMapOf<String, MutableList<JsonObject>>()
 
                     if (formatsArray != null) {
                         for (elem in formatsArray) {
                             if (!elem.isJsonObject) continue
                             val fObj = elem.asJsonObject
-                            val height = fObj.get("height")?.takeIf { !it.isJsonNull }?.asInt ?: continue
+                            val height = fObj.get("height")?.takeIf { !it.isJsonNull }?.asInt ?: 0
+                            val width = fObj.get("width")?.takeIf { !it.isJsonNull }?.asInt ?: 0
                             val vcodec = fObj.get("vcodec")?.takeIf { !it.isJsonNull }?.asString ?: "none"
 
-                            if (height > 0 && vcodec != "none" && !seenHeights.contains(height)) {
-                                seenHeights.add(height)
-                                qualityOptions.add(
-                                    QualityOption(
-                                        label = "${height}p",
-                                        formatSpec = "bestvideo[height<=$height]+bestaudio/best[height<=$height]/bestvideo[height<=$height]/best[height<=$height]/best",
-                                        height = height,
-                                        isAudio = false
-                                    )
-                                )
+                            if ((height > 0 || width > 0) && vcodec != "none") {
+                                val shortDim = if (width > 0 && height > 0) minOf(width, height) else height
+                                val longDim = if (width > 0 && height > 0) maxOf(width, height) else height
+
+                                for (tdef in tierDefs) {
+                                    if (tdef.third(shortDim, longDim)) {
+                                        tierFormats.getOrPut(tdef.first) { mutableListOf() }.add(fObj)
+                                        break
+                                    }
+                                }
                             }
                         }
                     }
 
-                    qualityOptions.sortByDescending { it.height ?: 0 }
                     qualityOptions.add(
-                        0,
                         QualityOption(
-                            label = "Best available",
-                            formatSpec = "bestvideo+bestaudio/best",
+                            label = "Best available (Highest Quality • Original)",
+                            formatSpec = "bestvideo+bestaudio/bestvideo*+bestaudio/best",
                             height = null,
                             isAudio = false
                         )
                     )
+
+                    for (tdef in tierDefs) {
+                        val tname = tdef.first
+                        val fmts = tierFormats[tname]
+                        if (!fmts.isNullOrEmpty()) {
+                            val bestFmt = fmts.maxByOrNull { f ->
+                                val tbr = f.get("tbr")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                                val vbr = f.get("vbr")?.takeIf { !it.isJsonNull }?.asDouble ?: 0.0
+                                maxOf(tbr, vbr)
+                            }
+                            val fid = bestFmt?.get("format_id")?.takeIf { !it.isJsonNull }?.asString ?: ""
+                            val th = tdef.second
+                            val fmtSpec = if (fid.isNotEmpty()) {
+                                "$fid+bestaudio/bestvideo[height<=$th]+bestaudio/bestvideo+bestaudio/best"
+                            } else {
+                                "bestvideo[height<=$th]+bestaudio/bestvideo+bestaudio/best"
+                            }
+
+                            qualityOptions.add(
+                                QualityOption(
+                                    label = tname,
+                                    formatSpec = fmtSpec,
+                                    height = th,
+                                    isAudio = false
+                                )
+                            )
+                        }
+                    }
+
                     qualityOptions.add(
                         QualityOption(
                             label = "Audio only (MP3)",
@@ -199,7 +244,7 @@ object DownloaderManager {
             val isYouTube = url.contains("youtube.com", ignoreCase = true) || url.contains("youtu.be", ignoreCase = true)
 
             val clientFallbacks = if (isYouTube) {
-                listOf(null, "android,web", "tv", "tv_embedded", "ios")
+                listOf("android,ios", "ios", "android", "tv,tv_embedded", null)
             } else {
                 listOf(null)
             }
@@ -212,15 +257,19 @@ object DownloaderManager {
                         addOption("--dump-single-json")
                         addOption("--yes-playlist")
                         addOption("--skip-download")
-                        addOption("--socket-timeout", 30)
-                        addOption("--retries", 3)
+                        addOption("--no-warnings")
+                        addOption("--no-call-home")
                         addOption("--no-check-certificates")
+                        addOption("--socket-timeout", 20)
+                        addOption("--retries", 2)
                         addOption(
                             "--user-agent",
                             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                         )
                         if (client != null) {
-                            addOption("--extractor-args", "youtube:player_client=$client")
+                            addOption("--extractor-args", "youtube:player_client=$client;skip=translated_subs,comments")
+                        } else if (isYouTube) {
+                            addOption("--extractor-args", "youtube:player_client=android,ios;skip=translated_subs,comments")
                         }
                     }
 
@@ -370,23 +419,27 @@ object DownloaderManager {
             val isYouTube = url.contains("youtube.com", ignoreCase = true) || url.contains("youtu.be", ignoreCase = true)
             val isInstagram = url.contains("instagram.com", ignoreCase = true)
             val jobId = UUID.randomUUID().toString()
-            val outputTemplate = File(tempDir, "$jobId.%(ext)s").absolutePath
+            // Embed clean title in temporary filename to support Instant/Quick download mode
+            val outputTemplate = File(tempDir, "${jobId}___%(title).100B.%(ext)s").absolutePath
 
             val request = YoutubeDLRequest(url).apply {
                 addOption("--no-playlist")
                 addOption("-o", outputTemplate)
-                addOption("--concurrent-fragments", 4)
-                addOption("--retries", 3)
-                addOption("--socket-timeout", 30)
+                addOption("--no-warnings")
+                addOption("--no-call-home")
                 addOption("--no-check-certificates")
                 addOption("--geo-bypass")
+                addOption("--buffer-size", "64K")
+                addOption("--concurrent-fragments", 5)
+                addOption("--retries", 3)
+                addOption("--socket-timeout", 20)
                 addOption(
                     "--user-agent",
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                 )
 
                 if (isYouTube) {
-                    addOption("--extractor-args", "youtube:player_client=web,ios,android")
+                    addOption("--extractor-args", "youtube:player_client=web,tv;skip=translated_subs,comments")
                 }
                 if (isInstagram) {
                     addOption("--add-header", "Accept-Language: en-US,en;q=0.9")

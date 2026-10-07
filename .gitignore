@@ -1,10 +1,31 @@
+# Android
 *.iml
 .gradle
-/local.properties
+android/.gradle/
+local.properties
+android/local.properties
 /.idea
+android/.idea/
 .DS_Store
 /build
-/app/build
+android/build/
+android/app/build/
 /captures
 .externalNativeBuild
 .cxx
+
+# Windows / Python
+__pycache__/
+*.py[cod]
+*$py.class
+windows/build/
+windows/dist/
+windows/Fetchreel.exe
+*.spec
+.env
+
+.venv
+env/
+venv/
+*.egg-info/
+

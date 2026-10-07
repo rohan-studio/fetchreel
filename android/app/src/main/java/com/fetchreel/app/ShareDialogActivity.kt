@@ -248,27 +248,110 @@ private fun SharePopupScreen(
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(24.dp),
+                                    .padding(18.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(36.dp),
-                                    color = AccentCyan,
-                                    strokeWidth = 3.dp
-                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        color = AccentCyan,
+                                        strokeWidth = 2.5.dp
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "Analyzing media link...",
+                                            color = TextPrimary,
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                        Text(
+                                            text = "Extracting resolution list (1080p, 720p, etc.)",
+                                            color = TextSecondary,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+
+                                HorizontalDivider(color = DarkCardBorder)
+
                                 Text(
-                                    text = "Analyzing media link...",
-                                    color = TextPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.SemiBold
+                                    text = "Or start downloading immediately without waiting:",
+                                    color = TextMuted,
+                                    fontSize = 11.sp,
+                                    modifier = Modifier.align(Alignment.Start)
                                 )
-                                Text(
-                                    text = "Extracting MP3 audio, 4K, 1080p, and 720p video formats",
-                                    color = TextSecondary,
-                                    fontSize = 12.sp,
-                                    textAlign = TextAlign.Center
-                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            if (!sharedUrl.isNullOrBlank()) {
+                                                val fastInfo = VideoInfo(
+                                                    url = sharedUrl,
+                                                    title = "Fast Video Download",
+                                                    thumbnail = null,
+                                                    uploader = null,
+                                                    duration = null,
+                                                    options = emptyList()
+                                                )
+                                                val fastOption = QualityOption(
+                                                    label = "Best Video",
+                                                    formatSpec = "bestvideo+bestaudio/best",
+                                                    isAudio = false
+                                                )
+                                                onStartDownload(fastInfo, fastOption)
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = AccentIndigo),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(42.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("⚡ Fast Video", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            if (!sharedUrl.isNullOrBlank()) {
+                                                val fastInfo = VideoInfo(
+                                                    url = sharedUrl,
+                                                    title = "Fast Audio Download",
+                                                    thumbnail = null,
+                                                    uploader = null,
+                                                    duration = null,
+                                                    options = emptyList()
+                                                )
+                                                val fastOption = QualityOption(
+                                                    label = "Audio (MP3)",
+                                                    formatSpec = "bestaudio/best",
+                                                    isAudio = true
+                                                )
+                                                onStartDownload(fastInfo, fastOption)
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(42.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp)
+                                    ) {
+                                        Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("🎵 Fast MP3", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
                             }
                         }
                     }
@@ -307,6 +390,73 @@ private fun SharePopupScreen(
                                     color = TextPrimary,
                                     fontSize = 12.sp
                                 )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            if (!sharedUrl.isNullOrBlank()) {
+                                                val fastInfo = VideoInfo(
+                                                    url = sharedUrl,
+                                                    title = "Fast Video Download",
+                                                    thumbnail = null,
+                                                    uploader = null,
+                                                    duration = null,
+                                                    options = emptyList()
+                                                )
+                                                val fastOption = QualityOption(
+                                                    label = "Best Video",
+                                                    formatSpec = "bestvideo+bestaudio/best",
+                                                    isAudio = false
+                                                )
+                                                onStartDownload(fastInfo, fastOption)
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = AccentIndigo),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(40.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Try Fast Video", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            if (!sharedUrl.isNullOrBlank()) {
+                                                val fastInfo = VideoInfo(
+                                                    url = sharedUrl,
+                                                    title = "Fast Audio Download",
+                                                    thumbnail = null,
+                                                    uploader = null,
+                                                    duration = null,
+                                                    options = emptyList()
+                                                )
+                                                val fastOption = QualityOption(
+                                                    label = "Audio (MP3)",
+                                                    formatSpec = "bestaudio/best",
+                                                    isAudio = true
+                                                )
+                                                onStartDownload(fastInfo, fastOption)
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(40.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp)
+                                    ) {
+                                        Icon(Icons.Default.MusicNote, contentDescription = null, modifier = Modifier.size(15.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Try Fast MP3", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.End
