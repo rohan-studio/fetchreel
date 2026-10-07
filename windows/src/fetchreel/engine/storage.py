@@ -149,10 +149,46 @@ class StorageManager:
 
     @staticmethod
     def reveal_in_explorer(filepath: str):
-        """Highlights the file in Windows File Explorer."""
+        """Highlights the file in Windows File Explorer or opens the download folder."""
         if not filepath:
             return
-        if os.path.isfile(filepath):
-            subprocess.run(["explorer", f"/select,{os.path.abspath(filepath)}"])
-        elif os.path.isdir(filepath):
-            subprocess.run(["explorer", os.path.abspath(filepath)])
+        try:
+            norm_path = os.path.normpath(os.path.abspath(filepath))
+            if os.path.isfile(norm_path):
+                # In Windows Explorer, /select,"C:\path\to\file" must NOT have quotes around /select
+                # Calling Popen with the formatted string ensures Explorer correctly highlights the file
+                try:
+                    subprocess.Popen(f'explorer /select,"{norm_path}"')
+                    return
+                except Exception:
+                    pass
+
+                # Fallback: open parent folder directly
+                parent_dir = os.path.dirname(norm_path)
+                if os.path.isdir(parent_dir):
+                    try:
+                        os.startfile(parent_dir)
+                        return
+                    except Exception:
+                        subprocess.Popen(f'explorer "{parent_dir}"')
+                        return
+
+            elif os.path.isdir(norm_path):
+                try:
+                    os.startfile(norm_path)
+                    return
+                except Exception:
+                    subprocess.Popen(f'explorer "{norm_path}"')
+                    return
+
+            # If path does not exist on disk, fallback to opening its parent or user's downloads folder
+            parent_dir = os.path.dirname(norm_path)
+            if parent_dir and os.path.isdir(parent_dir):
+                try:
+                    os.startfile(parent_dir)
+                    return
+                except Exception:
+                    subprocess.Popen(f'explorer "{parent_dir}"')
+                    return
+        except Exception:
+            pass

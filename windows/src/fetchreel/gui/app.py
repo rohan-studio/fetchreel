@@ -63,6 +63,7 @@ class FetchreelApp(ctk.CTk):
         self.last_clipboard_text = ""
 
         self._build_ui()
+        self._bind_mousewheel_scrolling()
 
         # Start clipboard listener if enabled
         self.after(1500, self._check_clipboard_loop)
@@ -138,7 +139,7 @@ class FetchreelApp(ctk.CTk):
             fg_color="transparent"
         )
 
-        # URL Input Card with 1-Tap Quick Actions & Formats Inspector
+        # 1. URL Input Card with 1-Tap Quick Actions & Formats Inspector (Top)
         self.url_card = UrlInputCard(
             parent=self.single_frame,
             on_fetch=self._start_single_probing,
@@ -148,16 +149,32 @@ class FetchreelApp(ctk.CTk):
             initial_autocapture=self.storage.get_auto_capture()
         )
 
+        # 2. Preview Container (Always situated directly below URL card and ABOVE downloads!)
+        self.preview_container = ctk.CTkFrame(self.single_frame, fg_color="transparent")
+        self.preview_container.pack(fill="x", padx=0, pady=0)
 
-        # Probed Video Preview & Quality Card
+        # Probed Video Preview & Quality Card (MediaHuman style: placed inside preview_container)
         self.media_preview = MediaPreviewCard(
-            parent=self.single_frame,
+            parent=self.preview_container,
             on_start_download=self._start_single_download
         )
 
-        # Active Downloads Container (supports multiple concurrent download progress cards)
+        # 3. Active / Recent Downloads Section Header & Container (situated below preview)
+        self.downloads_section = ctk.CTkFrame(self.single_frame, fg_color="transparent")
+        self.downloads_section.pack(fill="x", padx=16, pady=(8, 2))
+
+        self.downloads_header = ctk.CTkLabel(
+            self.downloads_section,
+            text="📥 Downloads Queue",
+            font=FONT_BODY_BOLD,
+            text_color=TEXT_PRIMARY,
+            anchor="w"
+        )
+        self.downloads_header.pack_forget()
+
+        # Active Downloads Container (where all active/completed download progress cards live)
         self.downloads_container = ctk.CTkFrame(self.single_frame, fg_color="transparent")
-        self.downloads_container.pack(fill="x", padx=0, pady=(6, 12))
+        self.downloads_container.pack(fill="x", padx=0, pady=(0, 16))
 
     def _build_playlist_tab(self):
         self.playlist_frame = PlaylistView(
@@ -194,11 +211,13 @@ class FetchreelApp(ctk.CTk):
         dest_dir = self.storage.get_download_dir()
         self.dest_lbl = ctk.CTkLabel(
             inner_f,
-            text=f"Save path: {dest_dir}",
+            text=f"📁 Save path: {dest_dir}",
             font=FONT_SMALL,
-            text_color=ACCENT_CYAN
+            text_color=ACCENT_CYAN,
+            cursor="hand2"
         )
         self.dest_lbl.pack(side="right")
+        self.dest_lbl.bind("<Button-1>", lambda e: self.storage.reveal_in_explorer(self.storage.get_download_dir()))
 
     def _on_tab_changed(self, value: str):
         if "Single" in value:
@@ -257,6 +276,8 @@ class FetchreelApp(ctk.CTk):
     def _on_single_probe_success(self, info: Dict[str, Any]):
         self.url_card.set_loading(False)
         self.media_preview.display_media(info)
+        # Smoothly scroll to top so the analyzed video and qualities are immediately visible in view!
+        self.after(50, lambda: self.single_frame._parent_canvas.yview_moveto(0.0))
 
     def _on_single_probe_error(self, error_message: str):
         self.url_card.set_loading(False)
@@ -266,12 +287,16 @@ class FetchreelApp(ctk.CTk):
         job_id = str(uuid.uuid4())[:8]
         cancel_event = threading.Event()
 
+        # Reveal downloads queue header when download cards are active
+        if hasattr(self, "downloads_header"):
+            self.downloads_header.pack(anchor="w", padx=0, pady=(2, 4))
+
         card = DownloadProgressCard(
             parent=self.downloads_container,
             job_id=job_id,
             on_cancel=self._cancel_job,
             on_play=self.storage.play_media,
-            on_open_folder=self.storage.reveal_in_explorer,
+            on_open_folder=self._handle_open_download_folder,
             on_dismiss=self._dismiss_job
         )
         card.pack(fill="x", pady=6)
@@ -292,6 +317,16 @@ class FetchreelApp(ctk.CTk):
     def _dismiss_job(self, job_id: str):
         if job_id in self.active_jobs:
             del self.active_jobs[job_id]
+        if not self.active_jobs and hasattr(self, "downloads_header"):
+            self.downloads_header.pack_forget()
+
+    def _handle_open_download_folder(self, filepath: Optional[str] = None):
+        """Opens file in Explorer or falls back directly to the configured downloads folder."""
+        if filepath and (os.path.exists(filepath) or os.path.exists(os.path.dirname(filepath))):
+            self.storage.reveal_in_explorer(filepath)
+        else:
+            dest_dir = self.storage.get_download_dir()
+            self.storage.reveal_in_explorer(dest_dir)
 
     def _start_single_download(self, media_info: Dict[str, Any], option: Dict[str, Any]):
         url = media_info.get("url", "")
@@ -548,6 +583,62 @@ class FetchreelApp(ctk.CTk):
                 pass
 
         self.after(1500, self._check_clipboard_loop)
+
+    # --- Mouse Wheel Smooth Scrolling ---
+
+    def _bind_mousewheel_scrolling(self):
+        """Binds universal, responsive mouse wheel scrolling across all frames and platforms."""
+        def _on_wheel(event):
+            # Do not intercept if user is focusing a scrollable textbox
+            widget = getattr(event, "widget", None)
+            widget_class = str(getattr(widget, "__class__", ""))
+            if "textbox" in widget_class.lower() or "text" in widget_class.lower():
+                return
+
+            active_sf = self._get_active_scrollable_frame()
+            if not active_sf or not hasattr(active_sf, "_parent_canvas"):
+                return
+
+            canvas = active_sf._parent_canvas
+            try:
+                if not canvas.winfo_exists():
+                    return
+                # Check if canvas content is actually scrollable
+                yview = canvas.yview()
+                if yview == (0.0, 1.0):
+                    return
+
+                # Windows / macOS: event.delta
+                if hasattr(event, "delta") and event.delta != 0:
+                    # Natural, responsive scroll speed (40-60 pixels per wheel notch)
+                    step = -int(event.delta / 2)
+                    canvas.yview("scroll", step, "units")
+                elif getattr(event, "num", None) == 4:
+                    # Linux scroll up
+                    canvas.yview("scroll", -3, "units")
+                elif getattr(event, "num", None) == 5:
+                    # Linux scroll down
+                    canvas.yview("scroll", 3, "units")
+            except Exception:
+                pass
+
+        self.bind_all("<MouseWheel>", _on_wheel, add="+")
+        self.bind_all("<Button-4>", _on_wheel, add="+")
+        self.bind_all("<Button-5>", _on_wheel, add="+")
+
+    def _get_active_scrollable_frame(self):
+        """Returns the CTkScrollableFrame for the currently visible tab."""
+        try:
+            tab = self.tab_selector.get()
+            if "Single" in tab:
+                return self.single_frame
+            elif "Playlist" in tab:
+                return getattr(self.playlist_frame, "items_scroll", None)
+            elif "Library" in tab:
+                return getattr(self.recent_frame, "scroll_frame", None)
+        except Exception:
+            pass
+        return self.single_frame
 
 
     # --- Library Management ---
