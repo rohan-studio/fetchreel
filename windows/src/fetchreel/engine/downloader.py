@@ -344,7 +344,7 @@ class DownloaderEngine:
                 frag_index = d.get("fragment_index")
                 frag_count = d.get("fragment_count")
 
-                if frag_index and frag_count and frag_count > 0:
+                if frag_index is not None and frag_count and frag_count > 0:
                     stream_fraction = min(1.0, max(0.0, float(frag_index) / float(frag_count)))
                 else:
                     total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
@@ -389,6 +389,9 @@ class DownloaderEngine:
 
                 downloaded_bytes = d.get("downloaded_bytes") or 0
                 total_bytes = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                if total_bytes == 0 and frag_index is not None and frag_count and frag_count > 0 and frag_index > 0:
+                    total_bytes = int((downloaded_bytes / frag_index) * frag_count)
+
                 downloaded_str = format_bytes(downloaded_bytes) if downloaded_bytes > 0 else "0 MB"
                 total_str = format_bytes(total_bytes) if total_bytes > 0 else ""
 

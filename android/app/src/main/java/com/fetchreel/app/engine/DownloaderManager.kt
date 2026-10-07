@@ -495,11 +495,18 @@ object DownloaderManager {
                     else -> "Downloading..."
                 }
 
-                if (progress > maxSeenProgress) {
-                    maxSeenProgress = progress
+                val mappedProgress = when {
+                    isMerging -> 98f
+                    option.isAudio -> (progress / 100f) * 92f
+                    isAudioStream -> 85f + ((progress / 100f) * 10f)
+                    else -> (progress / 100f) * 85f
                 }
 
-                val effectiveProgress = if (isMerging) maxOf(98f, maxSeenProgress) else maxSeenProgress
+                if (mappedProgress > maxSeenProgress) {
+                    maxSeenProgress = mappedProgress
+                }
+
+                val effectiveProgress = minOf(99f, maxSeenProgress)
                 onProgress(effectiveProgress, speed, etaText, statusText)
             }
 

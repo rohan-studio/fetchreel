@@ -59,6 +59,7 @@ class FetchreelApp(ctk.CTk):
 
         # Multi-Download Concurrent Registry: maps job_id -> {"cancel_event": Event, "card": DownloadProgressCard, "title": str}
         self.active_jobs: Dict[str, Dict[str, Any]] = {}
+        self.is_batch_downloading = False
         self.last_clipboard_text = ""
 
         self._build_ui()
@@ -454,8 +455,8 @@ class FetchreelApp(ctk.CTk):
         messagebox.showerror("Playlist Error", error_message)
 
     def _start_batch_download(self, items: List[Dict[str, Any]], option: Dict[str, Any]):
-        if self.is_downloading:
-            messagebox.showwarning("Busy", "A download is currently in progress. Please wait.")
+        if self.is_batch_downloading:
+            messagebox.showwarning("Busy", "A playlist download is currently in progress. Please wait.")
             return
 
         format_spec = option.get("format_spec", "bestvideo+bestaudio/best")
@@ -463,7 +464,7 @@ class FetchreelApp(ctk.CTk):
         out_dir = self.storage.get_download_dir()
 
         self.active_cancel_event = threading.Event()
-        self.is_downloading = True
+        self.is_batch_downloading = True
 
         def _worker():
             try:
@@ -492,7 +493,7 @@ class FetchreelApp(ctk.CTk):
             except Exception as e:
                 messagebox.showerror("Batch Error", str(e))
             finally:
-                self.is_downloading = False
+                self.is_batch_downloading = False
                 self.active_cancel_event = None
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -532,7 +533,7 @@ class FetchreelApp(ctk.CTk):
     # --- Clipboard Auto-Capture Loop ---
 
     def _check_clipboard_loop(self):
-        if self.storage.get_auto_capture() and not self.is_downloading and not self.url_card.is_probing:
+        if self.storage.get_auto_capture() and not self.url_card.is_probing:
             try:
                 clip = self.clipboard_get().strip()
                 if clip and clip != self.last_clipboard_text:

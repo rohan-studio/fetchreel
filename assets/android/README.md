@@ -29,7 +29,12 @@ This directory houses the Android APK release packages for Fetchreel.
    - Updated extractor arguments to utilize unthrottled desktop clients (`web`, `tv`), restoring full 1080p, 2K, and 4K video downloads.
 3. **Format ID Bitrate Binding:**
    - Stream picker now binds directly to the highest-bitrate video stream (`$fid+bestaudio`) instead of falling back to generic height queries, ensuring the crispest possible visual quality.
-4. **Enhanced Stability & Performance:**
+4. **Multi-Stage Monotonic Download Progress:**
+   - Implemented multi-stage progress scaling (Video: 0–85%, Audio: 85–95%, FFmpeg: 98%).
+   - Removed `.webm` audio false-detection and eliminated progress jumping backwards when switching streams.
+5. **Eliminated HTTP 403 Forbidden:**
+   - Removed forced `tv` client parameter that triggered YouTube PO-Token challenges and HTTP 403 errors.
+6. **Enhanced Stability & Performance:**
    - Improved FFmpeg muxing stability and memory efficiency during high-resolution remuxing.
 
 ---
