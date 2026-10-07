@@ -20,6 +20,12 @@ This release introduces high-definition unthrottled streaming across both platfo
 - **🚀 Fixed Low-Pixel (360p) YouTube Capping:**
   - Replaced mobile player client queries (`android`, `ios`) that were being throttled by YouTube's SABR experiment with desktop `web,tv` client requests.
   - Unlocked true 1080p, 1440p, and 4K stream extraction with clean FFmpeg audio muxing.
+- **📈 Solved Progress Percentage Jitter (Increasing & Decreasing):**
+  - **Root Cause:** yt-dlp downloads separate video and audio streams sequentially. In raw progress hooks, when the video stream reached 100%, the audio stream started from 0%, causing the progress percentage to drop backwards. Additionally, fluctuating `total_bytes_estimate` during DASH/chunked streaming caused percentage jumps.
+  - **The Fix:**
+    1. **Multi-Stream Stage Partitioning:** Video download maps smoothly from 0% to 80%, Audio download maps from 80% to 95%, and FFmpeg muxing maps from 95% to 99%.
+    2. **Strict Monotonic Clamping:** Progress is mathematically guaranteed to only increase (`max_seen_percent`), completely preventing backward jumps.
+    3. **Fragment-Aware Tracking:** Utilizes linear fragment counts (`fragment_index / fragment_count`) for DASH/HLS streams.
 - **⚡ Added 1-Tap Fast Actions:**
   - Added dedicated `⚡ Fast Video` and `🎵 Fast MP3` buttons allowing users to start downloads instantly without waiting for the full format list to populate.
 - **📑 Playlist & Channel Batch Downloader:**

@@ -33,4 +33,4 @@ assets/
 
 | Version | File | Status | Highlights & Solved Issues |
 | :--- | :--- | :--- | :--- |
-| **v1.1.0** | [`Fetchreel.exe`](windows/Fetchreel.exe) | 🟢 **Latest** | **Zero duplicate analyzing** (in-memory probe reuse via `process_ie_result`); **Fixed 1012p label**; **Uncapped 1080p/4K downloads**; 1-Tap Fast Video & Fast MP3 buttons; Standalone single-file executable. |
+| **v1.1.0** | [`Fetchreel.exe`](windows/Fetchreel.exe) | 🟢 **Latest** | **Zero duplicate analyzing**; **Fixed progress percent jitter** (smooth monotonic progress & multi-stream stage weighting); **Fixed 1012p label**; **Uncapped 1080p/4K downloads**; 1-Tap Fast Video & Fast MP3 buttons; Standalone single-file executable. |

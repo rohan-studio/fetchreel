@@ -25,9 +25,11 @@ class DownloadProgressCard(ctk.CTkFrame):
     def __init__(
         self,
         parent,
-        on_cancel: Callable[[], None],
-        on_play: Callable[[str], None],
-        on_open_folder: Callable[[str], None],
+        job_id: str = "",
+        on_cancel: Optional[Callable[[str], None]] = None = None,
+        on_play: Optional[Callable[[str], None]] = None = None,
+        on_open_folder: Optional[Callable[[str], None]] = None = None,
+        on_dismiss: Optional[Callable[[str], None]] = None = None,
     ):
         super().__init__(
             parent,
@@ -36,13 +38,15 @@ class DownloadProgressCard(ctk.CTkFrame):
             border_width=1,
             border_color=ACCENT_INDIGO
         )
+        self.job_id = job_id
         self.on_cancel = on_cancel
         self.on_play = on_play
         self.on_open_folder = on_open_folder
+        self.on_dismiss = on_dismiss
 
         self.completed_filepath: Optional[str] = None
+        self._max_percent = 0.0
         self._build_ui()
-        self.pack_forget()
 
     def _build_ui(self):
         self.inner = ctk.CTkFrame(self, fg_color="transparent")
@@ -138,7 +142,7 @@ class DownloadProgressCard(ctk.CTkFrame):
             text_color=TEXT_PRIMARY,
             height=34,
             corner_radius=8,
-            command=self.on_cancel
+            command=self._handle_cancel
         )
         self.cancel_btn.pack(side="left")
 
@@ -166,37 +170,68 @@ class DownloadProgressCard(ctk.CTkFrame):
             command=self._handle_folder
         )
 
+        self.dismiss_btn = ctk.CTkButton(
+            self.actions_row,
+            text="✕ Dismiss",
+            font=FONT_SMALL,
+            fg_color=DARK_CARD,
+            hover_color=DARK_BORDER,
+            text_color=TEXT_MUTED,
+            height=34,
+            corner_radius=8,
+            command=self._handle_dismiss
+        )
+
     def start_download(self, title: str, quality_label: str):
         self.completed_filepath = None
+        self._max_percent = 0.0
         self.media_title.configure(text=title)
         self.quality_badge.configure(text=quality_label)
         self.status_title.configure(text="⏳ Downloading...", text_color=TEXT_PRIMARY)
         self.progress_bar.configure(progress_color=ACCENT_INDIGO)
         self.progress_bar.set(0.0)
-        self.speed_label.configure(text="Initializing download...")
+        self.speed_label.configure(text="Connecting to media source...")
         self.percent_label.configure(text="0%")
         self.status_text.configure(text="Starting engine and extracting stream...", text_color=ACCENT_INDIGO_LIGHT)
 
         self.play_btn.pack_forget()
         self.folder_btn.pack_forget()
+        self.dismiss_btn.pack_forget()
         self.cancel_btn.pack(side="left")
 
-        self.pack(fill="x", padx=16, pady=10)
+        self.pack(fill="x", padx=16, pady=8)
 
     def update_progress(self, data: Dict[str, Any]):
-        percent = data.get("percent", 0.0)
+        raw_percent = data.get("percent", 0.0)
+        # Ensure progress strictly monotonically increases and never decreases
+        self._max_percent = max(getattr(self, "_max_percent", 0.0), raw_percent)
+        percent = min(99.0, self._max_percent)
+
+        downloaded_str = data.get("downloaded_str", "")
+        total_str = data.get("total_str", "")
         speed = data.get("speed", "")
         eta = data.get("eta", "")
         status = data.get("status_text", "Downloading...")
 
         self.progress_bar.set(min(1.0, max(0.0, percent / 100.0)))
+
+        # Format metrics: Downloaded / Total • Speed
+        size_parts = []
+        if downloaded_str:
+            if total_str:
+                size_parts.append(f"{downloaded_str} / {total_str}")
+            else:
+                size_parts.append(downloaded_str)
+        if speed:
+            size_parts.append(speed)
+
+        metrics_display = "  •  ".join(size_parts) if size_parts else "Processing stream..."
+        self.speed_label.configure(text=metrics_display)
+
         percent_str = f"{int(percent)}%"
         if eta:
             percent_str += f" (ETA: {eta})"
         self.percent_label.configure(text=percent_str)
-
-        speed_text = speed if speed else "Processing stream..."
-        self.speed_label.configure(text=speed_text)
         self.status_text.configure(text=status)
 
     def mark_completed(self, filepath: str):
@@ -210,18 +245,29 @@ class DownloadProgressCard(ctk.CTkFrame):
 
         self.cancel_btn.pack_forget()
         self.play_btn.pack(side="left", padx=(0, 8))
-        self.folder_btn.pack(side="left")
+        self.folder_btn.pack(side="left", padx=(0, 8))
+        self.dismiss_btn.pack(side="left")
 
     def mark_error(self, error_message: str):
         self.status_title.configure(text="⚠️ Download Failed", text_color=ERROR_RED)
         self.progress_bar.configure(progress_color=ERROR_RED)
         self.status_text.configure(text=error_message, text_color=ERROR_RED)
-        self.cancel_btn.configure(text="✕ Dismiss", hover_color=DARK_BORDER)
+        self.cancel_btn.pack_forget()
+        self.dismiss_btn.pack(side="left")
+
+    def _handle_cancel(self):
+        if self.on_cancel:
+            self.on_cancel(self.job_id)
+
+    def _handle_dismiss(self):
+        if self.on_dismiss:
+            self.on_dismiss(self.job_id)
+        self.destroy()
 
     def _handle_play(self):
-        if self.completed_filepath:
+        if self.completed_filepath and self.on_play:
             self.on_play(self.completed_filepath)
 
     def _handle_folder(self):
-        if self.completed_filepath:
+        if self.completed_filepath and self.on_open_folder:
             self.on_open_folder(self.completed_filepath)

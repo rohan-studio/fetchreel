@@ -150,8 +150,8 @@ class DownloaderEngine:
         is_youtube = any(d in url.lower() for d in ["youtube.com", "youtu.be"])
         is_instagram = "instagram.com" in url.lower()
 
-        # Web and TV clients provide full 1080p, 1440p, 4K streams (iOS/Android mobile clients cap at 360p)
-        client_fallbacks = [None, "web,tv", "tv_embedded"] if is_youtube else [None]
+        # Use standard yt-dlp client orchestration (provides full 1080p, 1440p, 4K streams without 403 errors)
+        client_fallbacks = [None]
         last_error = None
 
         # Standard industry resolution tiers (handles 16:9 landscape, letterboxed 1012p, and 9:16 vertical Reels)
@@ -308,48 +308,97 @@ class DownloaderEngine:
         outtmpl = os.path.join(output_dir, "%(title).180B [%(id)s].%(ext)s")
 
         downloaded_filepath = None
-        is_merging = False
-        is_audio_stream = False
+        current_stage = "video" if not is_audio else "audio"
+        max_seen_percent = 0.0
 
         def hook(d: Dict[str, Any]):
-            nonlocal downloaded_filepath, is_merging, is_audio_stream
+            nonlocal downloaded_filepath, current_stage, max_seen_percent
 
             if cancel_event and cancel_event.is_set():
                 raise DownloadCancelled("Download cancelled by user.")
 
             status = d.get("status")
             if status == "downloading":
-                total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
-                downloaded = d.get("downloaded_bytes") or 0
+                filename = d.get("filename", "")
+                info_dict = d.get("info_dict") or {}
+                vcodec = info_dict.get("vcodec")
+                acodec = info_dict.get("acodec")
+
+                # Accurate stream type detection:
+                # Video files can be .mp4, .webm, .mkv, etc.
+                # Audio-only streams are .m4a, .opus, .aac, .mp3, .ogg, .flac, .wav
+                audio_exts = (".m4a", ".opus", ".aac", ".mp3", ".ogg", ".flac", ".wav")
+                if is_audio:
+                    current_stage = "audio"
+                elif vcodec and vcodec != "none":
+                    current_stage = "video"
+                elif (vcodec == "none" or not vcodec) and (acodec and acodec != "none"):
+                    current_stage = "audio"
+                elif any(filename.lower().endswith(ext) or (ext + ".") in filename.lower() for ext in audio_exts):
+                    current_stage = "audio"
+                else:
+                    current_stage = "video"
+
+                # Calculate progress fraction for current stream (0.0 to 1.0)
+                stream_fraction = 0.0
+                frag_index = d.get("fragment_index")
+                frag_count = d.get("fragment_count")
+
+                if frag_index and frag_count and frag_count > 0:
+                    stream_fraction = min(1.0, max(0.0, float(frag_index) / float(frag_count)))
+                else:
+                    total = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                    downloaded = d.get("downloaded_bytes") or 0
+                    if total > 0:
+                        stream_fraction = min(1.0, max(0.0, float(downloaded) / float(total)))
+
+                # Real-time multi-stage mapping:
+                # Video+Audio: Video stream: 0% -> 85%, Audio track: 85% -> 95%, FFmpeg muxing: 95% -> 99%
+                # Audio-only: Audio download: 0% -> 90%, MP3 conversion: 90% -> 99%
+                if is_audio:
+                    calc_percent = stream_fraction * 90.0
+                    status_text = "Downloading audio stream..."
+                elif current_stage == "video":
+                    calc_percent = stream_fraction * 85.0
+                    status_text = "Downloading video stream..."
+                else:
+                    calc_percent = 85.0 + (stream_fraction * 10.0)
+                    status_text = "Downloading audio track..."
+
+                # STRICT MONOTONIC PROGRESS GUARANTEE:
+                # Progress percent must NEVER decrease
+                if calc_percent > max_seen_percent:
+                    max_seen_percent = calc_percent
+
                 speed = d.get("speed")
                 eta = d.get("eta")
-
-                percent = (downloaded / total * 100.0) if total > 0 else 0.0
                 speed_str = f"{format_bytes(speed)}/s" if speed else ""
-                eta_str = f"{eta}s" if eta and eta > 0 else ""
 
-                filename = d.get("filename", "")
-                if any(ext in filename.lower() for ext in [".m4a", ".webm", ".opus", ".mp3", ".aac"]):
-                    is_audio_stream = True
+                # Format clean human-readable ETA (e.g. 15s or 1m 20s)
+                eta_str = ""
+                if eta is not None:
+                    try:
+                        eta_val = int(round(float(eta)))
+                        if eta_val > 0:
+                            if eta_val >= 60:
+                                eta_str = f"{eta_val // 60}m {eta_val % 60}s"
+                            else:
+                                eta_str = f"{eta_val}s"
+                    except (ValueError, TypeError):
+                        pass
 
-                if is_merging:
-                    status_text = "Finalizing media file with FFmpeg..."
-                    effective_percent = 98.0
-                elif is_audio:
-                    status_text = "Downloading audio stream..."
-                    effective_percent = percent
-                elif is_audio_stream:
-                    status_text = "Downloading audio track..."
-                    effective_percent = percent
-                else:
-                    status_text = "Downloading video stream..."
-                    effective_percent = percent
+                downloaded_bytes = d.get("downloaded_bytes") or 0
+                total_bytes = d.get("total_bytes") or d.get("total_bytes_estimate") or 0
+                downloaded_str = format_bytes(downloaded_bytes) if downloaded_bytes > 0 else "0 MB"
+                total_str = format_bytes(total_bytes) if total_bytes > 0 else ""
 
                 progress_callback({
                     "status": "downloading",
-                    "percent": effective_percent,
-                    "downloaded_bytes": downloaded,
-                    "total_bytes": total,
+                    "percent": max_seen_percent,
+                    "downloaded_bytes": downloaded_bytes,
+                    "total_bytes": total_bytes,
+                    "downloaded_str": downloaded_str,
+                    "total_str": total_str,
                     "speed": speed_str,
                     "eta": eta_str,
                     "status_text": status_text,
@@ -359,13 +408,64 @@ class DownloaderEngine:
                 filename = d.get("filename")
                 if filename:
                     downloaded_filepath = filename
-                is_merging = True
+
+                if not is_audio and current_stage == "video":
+                    current_stage = "audio"
+                    max_seen_percent = max(max_seen_percent, 85.0)
+                    progress_callback({
+                        "status": "downloading",
+                        "percent": max_seen_percent,
+                        "downloaded_bytes": 0,
+                        "total_bytes": 0,
+                        "downloaded_str": "",
+                        "total_str": "",
+                        "speed": "",
+                        "eta": "",
+                        "status_text": "Video stream downloaded • Fetching audio track...",
+                    })
+                else:
+                    max_seen_percent = max(max_seen_percent, 95.0)
+                    progress_callback({
+                        "status": "merging",
+                        "percent": max_seen_percent,
+                        "downloaded_bytes": 0,
+                        "total_bytes": 0,
+                        "downloaded_str": "",
+                        "total_str": "",
+                        "speed": "",
+                        "eta": "",
+                        "status_text": "Merging video & audio with FFmpeg..." if not is_audio else "Converting to MP3...",
+                    })
+
+        def postprocessor_hook(d: Dict[str, Any]):
+            nonlocal max_seen_percent
+            pp_status = d.get("status")
+            pp_name = d.get("postprocessor", "")
+            if pp_status == "started":
+                max_seen_percent = max(max_seen_percent, 96.0)
                 progress_callback({
                     "status": "merging",
-                    "percent": 96.0,
+                    "percent": max_seen_percent,
+                    "downloaded_bytes": 0,
+                    "total_bytes": 0,
+                    "downloaded_str": "",
+                    "total_str": "",
                     "speed": "",
                     "eta": "",
-                    "status_text": "Merging video & audio formats..." if not is_audio else "Converting to MP3...",
+                    "status_text": f"Finalizing media with FFmpeg ({pp_name})...",
+                })
+            elif pp_status == "finished":
+                max_seen_percent = max(max_seen_percent, 99.0)
+                progress_callback({
+                    "status": "merging",
+                    "percent": 99.0,
+                    "downloaded_bytes": 0,
+                    "total_bytes": 0,
+                    "downloaded_str": "",
+                    "total_str": "",
+                    "speed": "",
+                    "eta": "",
+                    "status_text": "Processing complete • Saving file...",
                 })
 
         is_youtube = any(d in url.lower() for d in ["youtube.com", "youtu.be"])
@@ -374,6 +474,7 @@ class DownloaderEngine:
         ydl_opts: Dict[str, Any] = {
             "outtmpl": outtmpl,
             "progress_hooks": [hook],
+            "postprocessor_hooks": [postprocessor_hook],
             "quiet": True,
             "no_warnings": True,
             "noplaylist": True,
@@ -390,8 +491,6 @@ class DownloaderEngine:
         if self.ffmpeg_dir:
             ydl_opts["ffmpeg_location"] = self.ffmpeg_dir
 
-        if is_youtube:
-            ydl_opts["extractor_args"] = {"youtube": {"player_client": ["web", "tv"]}}
         if is_instagram:
             ydl_opts["http_headers"] = {"Accept-Language": "en-US,en;q=0.9"}
 
@@ -411,9 +510,18 @@ class DownloaderEngine:
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             import copy
+            meta = None
             if raw_info:
-                # Skip duplicate network extraction completely: download directly from probed metadata!
-                meta = ydl.process_ie_result(copy.deepcopy(raw_info), download=True)
+                # Try instant download using cached probe metadata
+                try:
+                    meta = ydl.process_ie_result(copy.deepcopy(raw_info), download=True)
+                except Exception as e:
+                    err_str = str(e).lower()
+                    if "403" in err_str or "forbidden" in err_str or "expired" in err_str or "reload" in err_str:
+                        # Cached URLs expired; fall back to fresh direct extraction seamlessly
+                        meta = ydl.extract_info(url, download=True)
+                    else:
+                        raise e
             else:
                 # Direct 1-tap download: analyzes and downloads in a single unified step!
                 meta = ydl.extract_info(url, download=True)

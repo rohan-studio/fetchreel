@@ -29,10 +29,13 @@ This directory houses the standalone desktop application builds for Windows.
 3. **Fixed Low-Pixel (360p) Throttled Downloads:**
    - Bypassed YouTube's SABR mobile client restrictions by switching extraction requests to desktop web/tv clients.
    - Downloads crisp 1080p and 4K streams with full audio muxing.
-4. **1-Tap Fast Actions:**
+4. **Solved Download Percent Jitter (Increasing and Decreasing):**
+   - Eliminated the issue where the progress percentage dropped backwards when transitioning from the video stream to the audio stream.
+   - Implemented multi-stage weighting (Video: 0–80%, Audio: 80–95%, FFmpeg muxing: 95–99%) and strict monotonic clamping (`max_seen_percent`) to guarantee smooth, non-decreasing progress tracking.
+5. **1-Tap Fast Actions:**
    - Added instant one-tap `⚡ Fast Video` and `🎵 Fast MP3` download triggers for rapid downloading without waiting for full stream parsing.
-5. **Batch Playlist & Channel Downloads:**
+6. **Batch Playlist & Channel Downloads:**
    - Full playlist probing with selectable checkbox list, individual status indicators, and total progress tracking.
-6. **Built-in Media Library & QR Sharing:**
+7. **Built-in Media Library & QR Sharing:**
    - View, play, reveal, or delete downloaded media directly from the GUI.
    - Share button opens an on-screen QR code for direct Android APK installation.

@@ -68,6 +68,7 @@ Release binaries are organized into separate folders inside [`assets/`](assets/)
 ### 💻 Windows Releases ([`assets/windows/`](assets/windows/))
 - 🟢 **v1.1.0 (Latest):** [`assets/windows/Fetchreel.exe`](assets/windows/Fetchreel.exe)
   - **Zero Duplicate Analyzing:** Instant download using cached probe data (`process_ie_result`).
+  - **Solved Progress Percent Jitter:** Multi-stream stage weighting & strictly monotonic progress tracking prevent percentage from increasing and decreasing backwards.
   - **Clean Standard Tiers:** Fixed odd dimensions like `1012p`.
   - **Uncapped High Resolution:** Full 1080p/4K unthrottled downloads.
   - **1-Tap Fast Downloads:** Instant `⚡ Fast Video` and `🎵 Fast MP3` buttons.

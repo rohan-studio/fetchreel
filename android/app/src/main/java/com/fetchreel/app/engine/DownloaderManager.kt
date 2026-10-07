@@ -91,10 +91,8 @@ object DownloaderManager {
                             "--user-agent",
                             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
                         )
-                        if (client != null) {
-                            addOption("--extractor-args", "youtube:player_client=$client;skip=translated_subs,comments")
-                        } else if (isYouTube) {
-                            addOption("--extractor-args", "youtube:player_client=android,ios;skip=translated_subs,comments")
+                        if (isYouTube) {
+                            addOption("--extractor-args", "youtube:skip=translated_subs,comments")
                         }
                         if (isInstagram) {
                             addOption("--add-header", "Accept-Language: en-US,en;q=0.9")
@@ -439,7 +437,7 @@ object DownloaderManager {
                 )
 
                 if (isYouTube) {
-                    addOption("--extractor-args", "youtube:player_client=web,tv;skip=translated_subs,comments")
+                    addOption("--extractor-args", "youtube:skip=translated_subs,comments")
                 }
                 if (isInstagram) {
                     addOption("--add-header", "Accept-Language: en-US,en;q=0.9")
@@ -467,6 +465,7 @@ object DownloaderManager {
 
             var isMerging = false
             var isAudioStream = false
+            var maxSeenProgress = 0f
 
             YoutubeDL.getInstance().execute(request) { progress, etaInSeconds, line ->
                 val speed = extractSpeedFromLog(line)
@@ -483,19 +482,24 @@ object DownloaderManager {
                         "Converting audio to MP3..."
                     }
                     currentLine.contains("[download] Destination", ignoreCase = true) -> {
-                        if (currentLine.contains(".m4a") || currentLine.contains(".webm") || currentLine.contains(".mp3")) {
+                        if (currentLine.contains(".m4a") || currentLine.contains(".opus") || currentLine.contains(".mp3") || currentLine.contains(".aac")) {
                             isAudioStream = true
-                            "Downloading audio stream..."
+                            "Downloading audio track..."
                         } else {
+                            isAudioStream = false
                             "Downloading video stream..."
                         }
                     }
-                    isMerging -> "Finalizing media file..."
-                    isAudioStream -> "Downloading audio stream..."
+                    isMerging -> "Finalizing media file with FFmpeg..."
+                    isAudioStream -> "Downloading audio track..."
                     else -> "Downloading..."
                 }
 
-                val effectiveProgress = if (isMerging) 98f else progress
+                if (progress > maxSeenProgress) {
+                    maxSeenProgress = progress
+                }
+
+                val effectiveProgress = if (isMerging) maxOf(98f, maxSeenProgress) else maxSeenProgress
                 onProgress(effectiveProgress, speed, etaText, statusText)
             }
 

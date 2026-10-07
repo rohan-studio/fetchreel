@@ -6,8 +6,9 @@ Matching Android App architecture, Material Dark UI, and native features.
 import os
 import sys
 import re
+import uuid
 import threading
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
@@ -56,10 +57,9 @@ class FetchreelApp(ctk.CTk):
         self.playlist_engine = PlaylistEngine(self.downloader)
         self.storage = StorageManager()
 
-        # Cancellation state
-        self.active_cancel_event: Optional[threading.Event] = None
+        # Multi-Download Concurrent Registry: maps job_id -> {"cancel_event": Event, "card": DownloadProgressCard, "title": str}
+        self.active_jobs: Dict[str, Dict[str, Any]] = {}
         self.last_clipboard_text = ""
-        self.is_downloading = False
 
         self._build_ui()
 
@@ -154,13 +154,9 @@ class FetchreelApp(ctk.CTk):
             on_start_download=self._start_single_download
         )
 
-        # Realtime Download Progress Card
-        self.progress_card = DownloadProgressCard(
-            parent=self.single_frame,
-            on_cancel=self._cancel_download,
-            on_play=self.storage.play_media,
-            on_open_folder=self.storage.reveal_in_explorer
-        )
+        # Active Downloads Container (supports multiple concurrent download progress cards)
+        self.downloads_container = ctk.CTkFrame(self.single_frame, fg_color="transparent")
+        self.downloads_container.pack(fill="x", padx=0, pady=(6, 12))
 
     def _build_playlist_tab(self):
         self.playlist_frame = PlaylistView(
@@ -265,12 +261,41 @@ class FetchreelApp(ctk.CTk):
         self.url_card.set_loading(False)
         messagebox.showerror("Failed to Read Media", error_message)
 
-    def _start_single_download(self, media_info: Dict[str, Any], option: Dict[str, Any]):
-        if self.is_downloading:
-            messagebox.showwarning("Busy", "A download is currently in progress. Please wait.")
-            return
+    def _create_download_card(self, title: str, quality_label: str) -> Tuple[str, DownloadProgressCard, threading.Event]:
+        job_id = str(uuid.uuid4())[:8]
+        cancel_event = threading.Event()
 
+        card = DownloadProgressCard(
+            parent=self.downloads_container,
+            job_id=job_id,
+            on_cancel=self._cancel_job,
+            on_play=self.storage.play_media,
+            on_open_folder=self.storage.reveal_in_explorer,
+            on_dismiss=self._dismiss_job
+        )
+        card.pack(fill="x", pady=6)
+        card.start_download(title, quality_label)
+
+        self.active_jobs[job_id] = {
+            "cancel_event": cancel_event,
+            "card": card,
+            "title": title
+        }
+        return job_id, card, cancel_event
+
+    def _cancel_job(self, job_id: str):
+        job = self.active_jobs.get(job_id)
+        if job and job.get("cancel_event"):
+            job["cancel_event"].set()
+
+    def _dismiss_job(self, job_id: str):
+        if job_id in self.active_jobs:
+            del self.active_jobs[job_id]
+
+    def _start_single_download(self, media_info: Dict[str, Any], option: Dict[str, Any]):
         url = media_info.get("url", "")
+        if not url:
+            return
         title = media_info.get("title", "Media")
         format_spec = option.get("format_spec", "bestvideo+bestaudio/best")
         is_audio = option.get("is_audio", False)
@@ -279,24 +304,21 @@ class FetchreelApp(ctk.CTk):
         raw_info = media_info.get("_raw_info")
 
         out_dir = self.storage.get_download_dir()
-        self.active_cancel_event = threading.Event()
-        self.is_downloading = True
-
-        self.progress_card.start_download(title, quality_label)
+        job_id, card, cancel_event = self._create_download_card(title, quality_label)
 
         def _worker():
             try:
                 def _prog_hook(data: Dict[str, Any]):
-                    self.after(0, lambda: self.progress_card.update_progress(data))
+                    self.after(0, lambda d=data, c=card: c.update_progress(d))
 
-                # Pass pre-extracted raw_info to completely eliminate analyzing twice!
+                # Pass pre-extracted raw_info to eliminate analyzing twice!
                 filepath = self.downloader.download_media(
                     url=url,
                     format_spec=format_spec,
                     is_audio=is_audio,
                     output_dir=out_dir,
                     progress_callback=_prog_hook,
-                    cancel_event=self.active_cancel_event,
+                    cancel_event=cancel_event,
                     raw_info=raw_info,
                 )
 
@@ -308,38 +330,29 @@ class FetchreelApp(ctk.CTk):
                         is_audio=is_audio,
                         thumbnail=thumbnail
                     )
-                    self.after(0, lambda: self.progress_card.mark_completed(filepath))
+                    self.after(0, lambda p=filepath, c=card: c.mark_completed(p))
 
             except Exception as e:
                 err_msg = str(e)
-                self.after(0, lambda: self.progress_card.mark_error(err_msg))
-            finally:
-                self.is_downloading = False
-                self.active_cancel_event = None
+                self.after(0, lambda m=err_msg, c=card: c.mark_error(m))
 
         threading.Thread(target=_worker, daemon=True).start()
 
     def _start_quick_video_download(self, url: str):
         if not url.strip():
             return
-        if self.is_downloading:
-            messagebox.showwarning("Busy", "A download is currently in progress. Please wait.")
-            return
 
         out_dir = self.storage.get_download_dir()
-        self.active_cancel_event = threading.Event()
-        self.is_downloading = True
-
         cached = self.downloader._probe_cache.get(self.downloader._normalize_url(url))
         raw_info = cached.get("_raw_info") if cached else None
         title = cached.get("title", "Fast Video Download") if cached else "Fast Video Download"
 
-        self.progress_card.start_download(title, "Best Quality")
+        job_id, card, cancel_event = self._create_download_card(title, "Best Quality")
 
         def _worker():
             try:
                 def _prog_hook(data: Dict[str, Any]):
-                    self.after(0, lambda: self.progress_card.update_progress(data))
+                    self.after(0, lambda d=data, c=card: c.update_progress(d))
 
                 filepath = self.downloader.download_media(
                     url=url,
@@ -347,7 +360,7 @@ class FetchreelApp(ctk.CTk):
                     is_audio=False,
                     output_dir=out_dir,
                     progress_callback=_prog_hook,
-                    cancel_event=self.active_cancel_event,
+                    cancel_event=cancel_event,
                     raw_info=raw_info,
                 )
 
@@ -360,38 +373,29 @@ class FetchreelApp(ctk.CTk):
                         is_audio=False,
                         thumbnail=""
                     )
-                    self.after(0, lambda: self.progress_card.mark_completed(filepath))
+                    self.after(0, lambda p=filepath, c=card: c.mark_completed(p))
 
             except Exception as e:
                 err_msg = str(e)
-                self.after(0, lambda: self.progress_card.mark_error(err_msg))
-            finally:
-                self.is_downloading = False
-                self.active_cancel_event = None
+                self.after(0, lambda m=err_msg, c=card: c.mark_error(m))
 
         threading.Thread(target=_worker, daemon=True).start()
 
     def _start_quick_audio_download(self, url: str):
         if not url.strip():
             return
-        if self.is_downloading:
-            messagebox.showwarning("Busy", "A download is currently in progress. Please wait.")
-            return
 
         out_dir = self.storage.get_download_dir()
-        self.active_cancel_event = threading.Event()
-        self.is_downloading = True
-
         cached = self.downloader._probe_cache.get(self.downloader._normalize_url(url))
         raw_info = cached.get("_raw_info") if cached else None
         title = cached.get("title", "Fast MP3 Download") if cached else "Fast MP3 Download"
 
-        self.progress_card.start_download(title, "Audio (MP3)")
+        job_id, card, cancel_event = self._create_download_card(title, "Audio (MP3)")
 
         def _worker():
             try:
                 def _prog_hook(data: Dict[str, Any]):
-                    self.after(0, lambda: self.progress_card.update_progress(data))
+                    self.after(0, lambda d=data, c=card: c.update_progress(d))
 
                 filepath = self.downloader.download_media(
                     url=url,
@@ -399,7 +403,7 @@ class FetchreelApp(ctk.CTk):
                     is_audio=True,
                     output_dir=out_dir,
                     progress_callback=_prog_hook,
-                    cancel_event=self.active_cancel_event,
+                    cancel_event=cancel_event,
                     raw_info=raw_info,
                 )
 
@@ -412,21 +416,19 @@ class FetchreelApp(ctk.CTk):
                         is_audio=True,
                         thumbnail=""
                     )
-                    self.after(0, lambda: self.progress_card.mark_completed(filepath))
+                    self.after(0, lambda p=filepath, c=card: c.mark_completed(p))
 
             except Exception as e:
                 err_msg = str(e)
-                self.after(0, lambda: self.progress_card.mark_error(err_msg))
-            finally:
-                self.is_downloading = False
-                self.active_cancel_event = None
+                self.after(0, lambda m=err_msg, c=card: c.mark_error(m))
 
         threading.Thread(target=_worker, daemon=True).start()
 
-
     def _cancel_download(self):
-        if self.active_cancel_event:
-            self.active_cancel_event.set()
+        for job in list(self.active_jobs.values()):
+            ev = job.get("cancel_event")
+            if ev:
+                ev.set()
 
     # --- Playlist Actions ---
 
